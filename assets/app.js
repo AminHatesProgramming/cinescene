@@ -69,6 +69,13 @@ function chips(items, limit = 6) {
     .join("");
 }
 
+function timecode(seconds) {
+  const value = Number(seconds || 0);
+  const minutes = Math.floor(value / 60);
+  const secs = Math.floor(value % 60);
+  return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
 function sourceLabel(source) {
   if (source === "offline_video_ingestion") return "Offline crawler";
   if (source === "tmdb_enriched") return "TMDB enriched";
@@ -86,6 +93,11 @@ function scoreItem(item, query) {
   const mood = (item.mood || []).join(" ").toLowerCase();
   const genres = (item.genres || []).join(" ").toLowerCase();
   const keywords = (item.keywords || []).join(" ").toLowerCase();
+  const visualTags = (item.visual_tags || []).join(" ").toLowerCase();
+  const timeline = (item.scene_timeline || [])
+    .map((scene) => `${scene.visual_caption || ""} ${scene.transcript || ""} ${(scene.visual_tags || []).join(" ")} ${(scene.keywords || []).join(" ")}`)
+    .join(" ")
+    .toLowerCase();
   let score = 0;
 
   for (const term of terms) {
@@ -96,6 +108,8 @@ function scoreItem(item, query) {
     if (mood.includes(term)) score += 1.9;
     if (genres.includes(term)) score += 1.5;
     if (keywords.includes(term)) score += 2.0;
+    if (visualTags.includes(term)) score += 1.7;
+    if (timeline.includes(term)) score += 2.6;
   }
 
   const queryLower = query.toLowerCase();
@@ -133,9 +147,16 @@ function renderResults(entries, query, elapsedMs) {
   els.results.innerHTML = entries
     .map(({ item, score }, index) => {
       const poster = item.poster ? `<img class="poster" src="./${escapeHtml(item.poster)}" alt="${escapeHtml(item.title)} keyframe" />` : "";
-      const scenes = (item.scenes || [])
-        .slice(0, 2)
-        .map((scene) => `<li>${escapeHtml(scene)}</li>`)
+      const timeline = (item.scene_timeline || [])
+        .slice(0, 4)
+        .map((scene) => {
+          const keyframe = scene.keyframe ? `<img class="mini-frame" src="./${escapeHtml(scene.keyframe)}" alt="">` : "";
+          return `<li>${keyframe}<span><strong>${escapeHtml(timecode(scene.start_sec))}</strong> ${escapeHtml(scene.transcript || scene.visual_caption || "")}</span></li>`;
+        })
+        .join("");
+      const scenes = timeline || (item.scenes || [])
+        .slice(0, 4)
+        .map((scene) => `<li><span>${escapeHtml(scene)}</span></li>`)
         .join("");
       return `<article class="movie-card ${item.poster ? "has-poster" : ""}">
         <div class="movie-card-inner">
@@ -149,7 +170,7 @@ function renderResults(entries, query, elapsedMs) {
               <span class="chip">Rating ${escapeHtml(item.rating || 0)}</span>
               <span class="chip score-chip">Score ${score.toFixed(2)}</span>
             </div>
-            <div class="tag-row">${chips(item.genres, 4)}${chips(item.mood, 5)}${chips(item.keywords, 4)}</div>
+            <div class="tag-row">${chips(item.genres, 4)}${chips(item.mood, 5)}${chips(item.keywords, 4)}${chips(item.visual_tags, 4)}</div>
             <p class="overview">${escapeHtml(item.overview || "No overview available in the sample catalog.")}</p>
             ${scenes ? `<ol class="scene-list">${scenes}</ol>` : ""}
             <div class="movie-actions">
@@ -182,7 +203,7 @@ function renderMemory() {
     ? state.history
         .map((item) => `<button class="side-item" data-query="${escapeHtml(item.query)}" type="button">
           <strong>${escapeHtml(item.query)}</strong>
-          <span>${escapeHtml(item.count)} results · ${escapeHtml(item.at)}</span>
+          <span>${escapeHtml(item.count)} results - ${escapeHtml(item.at)}</span>
         </button>`)
         .join("")
     : `<div class="side-item"><span>Searches will appear here.</span></div>`;
@@ -191,7 +212,7 @@ function renderMemory() {
     ? state.favorites
         .map((item) => `<button class="side-item" data-query="${escapeHtml(item.title)}" type="button">
           <strong>${escapeHtml(item.title)}</strong>
-          <span>${escapeHtml(sourceLabel(item.source))} · ${escapeHtml(item.year)}</span>
+          <span>${escapeHtml(sourceLabel(item.source))} - ${escapeHtml(item.year)}</span>
         </button>`)
         .join("")
     : `<div class="side-item"><span>Favorites will appear here.</span></div>`;
