@@ -151,7 +151,29 @@ offline_recall_at_1=3/3
 - `build_index_v2.py`: FAISS index builder
 - `scripts/smoke_test_final.py`: quick final readiness test
 - `scripts/benchmark_cinescene.py`: full benchmark
+- `scripts/publish_github_pages.ps1`: create/push the GitHub repository when `GH_TOKEN` is available
 - `.github/workflows/pages.yml`: GitHub Pages deployment
+
+## Publish To GitHub Pages
+
+Create a GitHub Personal Access Token with `repo` and `workflow` permissions, then run:
+
+```powershell
+$env:GH_TOKEN = "YOUR_TOKEN_HERE"
+.\scripts\publish_github_pages.ps1
+```
+
+The script creates/pushes:
+
+```text
+https://github.com/aminhatesprogramming/cinescene
+```
+
+GitHub Actions then deploys:
+
+```text
+https://aminhatesprogramming.github.io/cinescene
+```
 
 ## Future Upgrades
 
