@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CineScene icon">
+  <rect width="512" height="512" rx="92" fill="#101317"/>
+  <path d="M92 156h328v226H92z" fill="#171b20" stroke="#35d0a7" stroke-width="18"/>
+  <path d="M92 156l52-74h78l-52 74zm118 0l52-74h78l-52 74zm118 0l52-74h40v74z" fill="#35d0a7"/>
+  <circle cx="188" cy="276" r="38" fill="#e7ba61"/>
+  <path d="M246 316c35-56 70-86 112-92v120H146c31-8 66-17 100-28z" fill="#7aa7ff" opacity=".92"/>
+  <path d="M142 414h228" stroke="#f5f3ec" stroke-width="22" stroke-linecap="round"/>
+</svg>

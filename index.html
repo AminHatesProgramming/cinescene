@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101317" />
+    <meta
+      name="description"
+      content="CineScene is a semantic movie and offline scene retrieval PWA."
+    />
+    <title>CineScene PWA</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./assets/icon.svg" />
+    <link rel="stylesheet" href="./assets/styles.css?v=20260714" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <h1>CineScene</h1>
+            <p>Semantic movie, series, and offline scene retrieval</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <span class="status-pill" id="statusPill">Loading catalog</span>
+          <button class="ghost-button" id="installButton" type="button" hidden>Install</button>
+        </div>
+      </header>
+
+      <section class="metrics" aria-label="Catalog metrics">
+        <div><strong id="metricCatalog">-</strong><span>catalog items</span></div>
+        <div><strong id="metricOffline">-</strong><span>offline scenes</span></div>
+        <div><strong id="metricMode">PWA</strong><span>deploy mode</span></div>
+        <div><strong id="metricLatency">-</strong><span>last search</span></div>
+      </section>
+
+      <main class="workspace">
+        <section class="search-panel" aria-label="Search">
+          <div class="panel-heading">
+            <span>Query</span>
+            <button class="ghost-button" id="clearButton" type="button">Clear</button>
+          </div>
+          <textarea
+            id="queryInput"
+            spellcheck="false"
+            placeholder="A suspenseful detective mystery in a dark room"
+          ></textarea>
+
+          <div class="control-grid">
+            <label>
+              Results
+              <input id="topKInput" type="number" min="3" max="20" value="8" />
+            </label>
+            <label>
+              Source
+              <select id="sourceFilter">
+                <option value="all">All sources</option>
+                <option value="offline_video_ingestion">Offline crawler</option>
+                <option value="tmdb_enriched">TMDB enriched</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="preset-row" aria-label="Demo queries">
+            <button data-query="suspenseful detective mystery in a dark room">Offline crawler</button>
+            <button data-query="dark lonely science fiction movie with a mind bending ending">Dark sci-fi</button>
+            <button data-query="romantic comedy in New York with witty dialogue">New York rom-com</button>
+            <button data-query="space adventure with alien civilization">Space adventure</button>
+          </div>
+
+          <button class="primary-button" id="searchButton" type="button">Search</button>
+
+          <div class="crawler-proof">
+            <img src="./assets/keyframes/benchmark-001.jpg" alt="Offline crawler keyframe preview" />
+            <div>
+              <strong>Offline Crawler Proof</strong>
+              <span>Scene text, mood tags, and keyframes from local video ingestion are searchable in this PWA demo.</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="results-panel" aria-label="Results">
+          <div class="panel-heading">
+            <span>Results</span>
+            <span id="resultMeta">Ready</span>
+          </div>
+          <div class="results-list empty-state" id="results">
+            Search by plot, mood, scene, character situation, or cinematic feeling.
+          </div>
+        </section>
+
+        <aside class="side-panel" aria-label="Memory">
+          <nav class="tabs">
+            <button class="active" data-tab="history" type="button">History</button>
+            <button data-tab="favorites" type="button">Favorites</button>
+            <button data-tab="system" type="button">System</button>
+          </nav>
+
+          <div class="tab-view active" id="historyTab">
+            <div class="side-list" id="historyList"></div>
+          </div>
+
+          <div class="tab-view" id="favoritesTab">
+            <div class="side-list" id="favoriteList"></div>
+          </div>
+
+          <div class="tab-view" id="systemTab">
+            <div class="system-card">
+              <strong>GitHub Pages Build</strong>
+              <span>Static PWA for public showcase</span>
+              <span>Backend FAISS pipeline remains available locally through FastAPI.</span>
+            </div>
+            <div class="system-card">
+              <strong>Offline Capability</strong>
+              <span>App shell and sample catalog are cached after first load.</span>
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="./assets/app.js?v=20260714" type="module"></script>
+  </body>
+</html>
