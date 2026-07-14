@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CineScene</title>
+    <link rel="stylesheet" href="/assets/styles.css?v=20260620-crawler" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>CineScene</h1>
+          <p>Semantic retrieval for movies, series, and offline scenes</p>
+        </div>
+        <div class="status-cluster">
+          <div class="system-pill" id="systemStatus">Checking engine</div>
+          <button class="icon-button" id="reloadButton" title="Reload search engine">Reload</button>
+        </div>
+      </header>
+
+      <section class="metrics-bar" aria-label="System metrics">
+        <div><span id="metricIndexed">-</span><small>Indexed</small></div>
+        <div><span id="metricOffline">-</span><small>Offline docs</small></div>
+        <div><span id="metricModel">-</span><small>Model</small></div>
+        <div><span id="metricCuda">-</span><small>CUDA</small></div>
+      </section>
+
+      <main class="workspace">
+        <section class="query-panel">
+          <div class="panel-title">
+            <span>Search</span>
+            <button class="icon-button" id="clearButton" title="Clear query">Clear</button>
+          </div>
+
+          <textarea
+            id="queryInput"
+            placeholder="A dark science-fiction film with loneliness, strange worlds, and a quiet emotional ending"
+          ></textarea>
+
+          <div class="controls-grid">
+            <label>
+              Results
+              <input id="topKInput" type="number" min="1" max="20" value="8" />
+            </label>
+            <label class="toggle-row">
+              <input id="rerankInput" type="checkbox" checked />
+              Rerank
+            </label>
+          </div>
+
+          <button class="primary-button" id="searchButton">Search Movies</button>
+
+          <div class="preset-row">
+            <button data-query="dark lonely science fiction movie with a mind bending ending">Dark sci-fi</button>
+            <button data-query="romantic comedy in New York with witty dialogue">Rom-com</button>
+            <button data-query="slow suspenseful detective thriller in a rainy city">Detective noir</button>
+            <button data-query="lonely detective enters a dark room and investigates a mystery">Offline scene</button>
+          </div>
+        </section>
+
+        <section class="results-panel">
+          <div class="panel-title">
+            <span>Results</span>
+            <span id="resultCount">No query yet</span>
+          </div>
+          <div id="results" class="results-list empty-state">
+            Describe a scene, mood, plot, or cinematic feeling.
+          </div>
+        </section>
+
+        <aside class="memory-panel">
+          <nav class="tabs" aria-label="Memory tabs">
+            <button class="active" data-tab="history">History</button>
+            <button data-tab="favorites">Favorites</button>
+            <button data-tab="ingest">Crawler</button>
+          </nav>
+
+          <div class="tab-view active" id="historyTab">
+            <div class="side-list" id="historyList"></div>
+          </div>
+
+          <div class="tab-view" id="favoritesTab">
+            <div class="side-list" id="favoriteList"></div>
+          </div>
+
+          <div class="tab-view" id="ingestTab">
+            <div class="crawler-dashboard">
+              <div>
+                <strong id="crawlerDocs">-</strong>
+                <span>offline docs</span>
+              </div>
+              <div>
+                <strong id="crawlerScenes">-</strong>
+                <span>scene files</span>
+              </div>
+              <div>
+                <strong id="crawlerFrames">-</strong>
+                <span>keyframes</span>
+              </div>
+            </div>
+
+            <form id="ingestForm" class="ingest-form">
+              <label>
+                Movie title
+                <input id="movieTitleInput" type="text" placeholder="Optional title" />
+              </label>
+              <label>
+                Offline video
+                <input id="videoInput" type="file" accept="video/*" />
+              </label>
+              <button class="secondary-button" type="submit">Detect Scenes</button>
+            </form>
+            <form id="crawlForm" class="ingest-form">
+              <label>
+                Offline folder path
+                <input id="crawlPathInput" type="text" placeholder="C:\Movies or D:\Series" />
+              </label>
+              <label>
+                Title prefix
+                <input id="crawlTitleInput" type="text" placeholder="Optional series/movie name" />
+              </label>
+              <div class="crawler-options">
+                <label>
+                  Min scene sec
+                  <input id="crawlMinSceneInput" type="number" min="1" max="120" step="1" value="6" />
+                </label>
+                <label>
+                  Cut threshold
+                  <input id="crawlThresholdInput" type="number" min="0.05" max="1" step="0.05" value="0.4" />
+                </label>
+                <label>
+                  Sample FPS
+                  <input id="crawlFpsInput" type="number" min="0.1" max="5" step="0.1" value="1" />
+                </label>
+              </div>
+              <label class="toggle-row">
+                <input id="crawlCatalogInput" type="checkbox" checked />
+                Update searchable catalog
+              </label>
+              <button class="icon-button" id="sampleCrawlerPathButton" type="button">Use Benchmark Folder</button>
+              <button class="secondary-button" type="submit">Crawl Folder</button>
+            </form>
+            <div class="crawler-actions">
+              <button class="secondary-button" id="rebuildIndexButton" type="button">Rebuild Search Index</button>
+              <button class="icon-button" id="refreshCrawlerButton" type="button">Refresh Status</button>
+            </div>
+            <div class="job-panel" id="jobPanel" hidden>
+              <div class="job-bar"><span id="jobBar"></span></div>
+              <strong id="jobTitle">Working</strong>
+              <span id="jobStatus">Waiting for job status</span>
+            </div>
+            <div class="notice" id="crawlerNotice">
+              Crawl local folders, rebuild the index, then search the extracted scene text.
+            </div>
+            <div class="side-list" id="ingestionList"></div>
+            <div class="side-list crawler-preview" id="crawlerPreview"></div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="/assets/app.js?v=20260620-crawler"></script>
+  </body>
+</html>

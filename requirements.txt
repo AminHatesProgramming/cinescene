@@ -1,0 +1,36 @@
+# Core ML and embeddings
+sentence-transformers>=2.7.0
+transformers>=4.40.0
+torch>=2.1.0
+
+# Vector search
+faiss-cpu>=1.7.4
+
+# Data processing
+pandas>=2.0.0
+numpy>=1.26,<2.0
+scikit-learn>=1.3.0
+tqdm>=4.65.0
+
+# Backend API
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+pydantic>=2.6.0
+httpx>=0.28.0
+
+# Retrieval helpers
+rank-bm25>=0.2.2
+pyspellchecker>=0.8.1
+python-dotenv>=1.0.0
+
+# Dataset utilities
+requests>=2.31.0
+kaggle>=1.5.16
+
+# Offline video ingestion
+opencv-python>=4.9.0
+
+# Optional enrichment ideas for stronger future ingestion:
+# openai-whisper for local speech-to-text
+# transformers + Pillow for BLIP-style keyframe captioning

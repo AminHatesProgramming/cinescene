@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Local runtime outputs
+logs/
+server.err.log
+server.out.log
+data/app_memory.sqlite
+data/index/
+data/offline_videos/
+data/processed/
+data/raw/
+
+# Large model checkpoints and caches
+model/
+models/
+*.safetensors
+*.bin
+*.pt
+*.pth
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Keep GitHub Pages PWA artifacts
+!docs/
+!docs/**
