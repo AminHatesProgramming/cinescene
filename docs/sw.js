@@ -1,12 +1,14 @@
-const CACHE_NAME = "cinescene-pwa-v20260714";
+const CACHE_NAME = "cinescene-pwa-v20260714-scene-v3";
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
-  "./assets/styles.css?v=20260714",
-  "./assets/app.js?v=20260714",
+  "./assets/styles.css?v=20260714-scene-v3",
+  "./assets/app.js?v=20260714-scene-v3",
   "./assets/icon.svg",
-  "./assets/keyframes/benchmark-001.jpg",
+  "./assets/keyframes/074564b877b4_001.jpg",
+  "./assets/keyframes/074564b877b4_002.jpg",
+  "./assets/keyframes/074564b877b4_003.jpg",
   "./data/catalog.sample.json"
 ];
 

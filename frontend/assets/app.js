@@ -44,11 +44,14 @@ const els = {
   crawlerScenes: document.getElementById("crawlerScenes"),
   crawlerFrames: document.getElementById("crawlerFrames"),
   crawlerNotice: document.getElementById("crawlerNotice"),
+  crawlerHealth: document.getElementById("crawlerHealth"),
+  probeList: document.getElementById("probeList"),
   ingestForm: document.getElementById("ingestForm"),
   crawlForm: document.getElementById("crawlForm"),
   rebuildIndex: document.getElementById("rebuildIndexButton"),
   refreshCrawler: document.getElementById("refreshCrawlerButton"),
   sampleCrawlerPath: document.getElementById("sampleCrawlerPathButton"),
+  probeCrawlerPath: document.getElementById("probeCrawlerPathButton"),
   jobPanel: document.getElementById("jobPanel"),
   jobBar: document.getElementById("jobBar"),
   jobTitle: document.getElementById("jobTitle"),
@@ -58,6 +61,7 @@ const els = {
   crawlPath: document.getElementById("crawlPathInput"),
   crawlTitle: document.getElementById("crawlTitleInput"),
   crawlMinScene: document.getElementById("crawlMinSceneInput"),
+  crawlMaxScene: document.getElementById("crawlMaxSceneInput"),
   crawlThreshold: document.getElementById("crawlThresholdInput"),
   crawlFps: document.getElementById("crawlFpsInput"),
   crawlCatalog: document.getElementById("crawlCatalogInput"),
@@ -88,7 +92,7 @@ function showError(message) {
 function setBusy(value) {
   state.loading = value;
   document.body.classList.toggle("busy", value);
-  [els.search, els.reload, els.rebuildIndex, els.refreshCrawler, els.sampleCrawlerPath]
+  [els.search, els.reload, els.rebuildIndex, els.refreshCrawler, els.sampleCrawlerPath, els.probeCrawlerPath]
     .filter(Boolean)
     .forEach((button) => {
       button.disabled = value;
@@ -99,9 +103,10 @@ function showJob(job, message) {
   if (!els.jobPanel) return;
   els.jobPanel.hidden = false;
   els.jobTitle.textContent = job.label || job.kind || "Working";
-  els.jobStatus.textContent = message || `${job.status || "running"} · ${job.elapsed_sec || 0}s`;
+  const current = job.current_video ? ` - ${job.current_video}` : "";
+  els.jobStatus.textContent = message || `${job.status || "running"} - ${job.elapsed_sec || 0}s${current}`;
   const elapsed = Number(job.elapsed_sec || 0);
-  const progress = job.status === "completed" ? 100 : job.status === "failed" ? 100 : Math.min(92, 8 + elapsed * 0.24);
+  const progress = job.status === "completed" ? 100 : job.status === "failed" ? 100 : Number(job.progress || Math.min(92, 8 + elapsed * 0.24));
   els.jobBar.style.width = `${progress}%`;
   els.jobPanel.dataset.status = job.status || "running";
 }
@@ -158,6 +163,13 @@ function chips(items, limit = 6) {
     .join("");
 }
 
+function timecode(seconds) {
+  const value = Number(seconds || 0);
+  const minutes = Math.floor(value / 60);
+  const secs = Math.floor(value % 60);
+  return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
 function mediaLabel(movie) {
   if (movie.media_type === "series" && movie.season && movie.episode) {
     return `Series S${String(movie.season).padStart(2, "0")}E${String(movie.episode).padStart(2, "0")}`;
@@ -191,8 +203,15 @@ function setCrawlerNotice(message, mode = "info") {
 function updateCrawlerDashboard(payload) {
   if (!payload || !els.crawlerPreview) return;
   els.crawlerDocs.textContent = payload.offline_documents ?? "-";
-  els.crawlerScenes.textContent = payload.scene_files ?? "-";
+  els.crawlerScenes.textContent = payload.scene_total ?? payload.scene_files ?? "-";
   els.crawlerFrames.textContent = payload.keyframes ?? "-";
+  if (els.crawlerHealth) {
+    const caps = payload.capabilities || {};
+    els.crawlerHealth.textContent = payload.crawler_enabled
+      ? `Active - ${caps.analysis_version || "scene-v3"} - OpenCV ready`
+      : "Inactive - OpenCV is missing";
+    els.crawlerHealth.dataset.mode = payload.crawler_enabled ? "ok" : "error";
+  }
 
   const previews = payload.scene_previews || [];
   if (!previews.length) {
@@ -206,11 +225,29 @@ function updateCrawlerDashboard(payload) {
         item.media_type === "series" && item.season && item.episode
           ? `S${String(item.season).padStart(2, "0")}E${String(item.episode).padStart(2, "0")}`
           : item.media_type || "movie";
+      const timeline = (item.timeline || [])
+        .map((scene) => {
+          const image = scene.keyframe_url
+            ? `<img class="scene-thumb" src="${escapeHtml(scene.keyframe_url)}" alt="">`
+            : `<div class="scene-thumb placeholder"></div>`;
+          const transcript = scene.transcript || scene.visual_caption || scene.rich_text || "";
+          return `<div class="scene-card">
+            ${image}
+            <div>
+              <strong>Scene ${escapeHtml(scene.scene_number || "-")} - ${escapeHtml(timecode(scene.start_sec))} to ${escapeHtml(timecode(scene.end_sec))}</strong>
+              <span>${escapeHtml(transcript)}</span>
+              <div class="mini-chip-row">${chips(scene.mood_tags, 4)}${chips(scene.keywords, 4)}${chips(scene.visual_tags, 3)}</div>
+            </div>
+          </div>`;
+        })
+        .join("");
       return `<div class="side-item">
         <strong>${escapeHtml(item.title)} (${escapeHtml(episode)})</strong>
         <span>${escapeHtml(item.scene_count)} scenes</span>
         <span>${escapeHtml(item.source_video || item.file)}</span>
+        ${item.keyframe_url ? `<img class="crawler-hero-frame" src="${escapeHtml(item.keyframe_url)}" alt="">` : ""}
         <span>${escapeHtml(item.first_scene || "Scene text is empty.")}</span>
+        <div class="scene-timeline">${timeline}</div>
       </div>`;
     })
     .join("");
@@ -229,8 +266,12 @@ function renderResults(results) {
   els.results.className = "results-list";
   els.results.innerHTML = state.results
     .map((movie, index) => {
-      const scenes = (movie.scenes || [])
-        .slice(0, 2)
+      const timelineMarkup = (movie.scene_timeline || [])
+        .slice(0, 4)
+        .map((scene) => `<li><strong>${escapeHtml(timecode(scene.start_sec))}</strong> ${escapeHtml(scene.transcript || scene.visual_caption || "")}</li>`)
+        .join("");
+      const scenes = timelineMarkup || (movie.scenes || [])
+        .slice(0, 4)
         .map((scene) => `<li>${escapeHtml(scene)}</li>`)
         .join("");
 
@@ -248,7 +289,7 @@ function renderResults(results) {
               </div>
             </div>
           </div>
-          <div class="tag-row">${chips(movie.genres, 5)}${chips(movie.mood, 5)}</div>
+          <div class="tag-row">${chips(movie.genres, 5)}${chips(movie.mood, 5)}${chips(movie.visual_tags, 5)}</div>
           <p class="overview">${escapeHtml(movie.overview || "No overview available.")}</p>
           ${scenes ? `<ol class="scene-list">${scenes}</ol>` : ""}
           <div class="movie-actions">
@@ -313,7 +354,9 @@ async function loadCrawlerStatus() {
   const report = payload.latest_report || {};
   const processed = report.videos_processed ?? 0;
   const docs = report.documents_created ?? payload.offline_documents ?? 0;
-  setCrawlerNotice(`Crawler ready. Latest run: ${processed} videos processed, ${docs} documents created.`, "info");
+  const failed = report.videos_failed ?? 0;
+  const scenes = report.scenes_created ?? payload.scene_total ?? 0;
+  setCrawlerNotice(`Crawler ready. Latest run: ${processed} videos, ${docs} documents, ${scenes} scenes, ${failed} failed.`, failed ? "warn" : "info");
   return payload;
 }
 
@@ -406,7 +449,7 @@ async function loadMemory() {
   renderSideList(els.favorites, favorites.items, {
     empty: "Favorites will appear here.",
     title: (item) => item.title,
-    body: (item) => `${item.year || "N/A"} · ${(item.genres || []).slice(0, 2).join(", ")}`,
+    body: (item) => `${item.year || "N/A"} - ${(item.genres || []).slice(0, 2).join(", ")}`,
   });
 
   renderSideList(els.ingestion, ingestions.items, {
@@ -475,6 +518,7 @@ async function crawlOfflineFolder(event) {
         root,
         title_prefix: els.crawlTitle.value.trim(),
         min_scene_sec: Number(els.crawlMinScene.value || 6),
+        max_scene_sec: Number(els.crawlMaxScene.value || 90),
         threshold: Number(els.crawlThreshold.value || 0.4),
         sample_fps: Number(els.crawlFps.value || 1),
         update_catalog: els.crawlCatalog.checked,
@@ -486,7 +530,9 @@ async function crawlOfflineFolder(event) {
         <strong>Crawl complete</strong>
         <span>${escapeHtml(report.videos_found)} videos found</span>
         <span>${escapeHtml(report.videos_processed)} videos processed</span>
+        <span>${escapeHtml(report.scenes_created)} scenes created</span>
         <span>${escapeHtml(report.documents_created)} searchable documents created</span>
+        <span>${escapeHtml(report.videos_failed)} failed</span>
         <span>${escapeHtml(report.combined_catalog)}</span>
       </div>`;
       updateCrawlerDashboard(result.crawler || {});
@@ -497,6 +543,37 @@ async function crawlOfflineFolder(event) {
   } catch (error) {
     els.ingestion.innerHTML = `<div class="side-item">${escapeHtml(error.message)}</div>`;
     setCrawlerNotice(error.message, "error");
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function probeOfflineFolder() {
+  const root = els.crawlPath.value.trim();
+  if (!root) {
+    setCrawlerNotice("Enter a folder path first.", "error");
+    return;
+  }
+  setBusy(true);
+  try {
+    const payload = await api("/api/crawl/probe", {
+      method: "POST",
+      body: JSON.stringify({ root }),
+    });
+    const preview = payload.preview || [];
+    setCrawlerNotice(`Probe found ${payload.videos_found} video files.`, payload.videos_found ? "ok" : "warn");
+    els.probeList.innerHTML = preview.length
+      ? preview
+          .map((item) => `<div class="side-item">
+            <strong>${escapeHtml(item.title)} - ${escapeHtml(item.media_type)}</strong>
+            <span>${escapeHtml(item.path)}</span>
+            <span>${escapeHtml((item.subtitle_files || []).length)} subtitle sidecars</span>
+          </div>`)
+          .join("")
+      : `<div class="side-item">No supported video files found in this path.</div>`;
+  } catch (error) {
+    setCrawlerNotice(error.message, "error");
+    els.probeList.innerHTML = `<div class="side-item">${escapeHtml(error.message)}</div>`;
   } finally {
     setBusy(false);
   }
@@ -545,10 +622,12 @@ els.search.addEventListener("click", () => runSearch());
 els.reload.addEventListener("click", reloadEngine);
 els.rebuildIndex.addEventListener("click", rebuildSearchIndex);
 els.refreshCrawler.addEventListener("click", () => loadCrawlerStatus().catch((error) => setCrawlerNotice(error.message, "error")));
+els.probeCrawlerPath.addEventListener("click", probeOfflineFolder);
 els.sampleCrawlerPath.addEventListener("click", () => {
   els.crawlPath.value = benchmarkFolderPath();
   els.crawlTitle.value = "Benchmark Show";
   els.crawlMinScene.value = "2";
+  els.crawlMaxScene.value = "6";
   els.crawlThreshold.value = "0.2";
   els.crawlFps.value = "2";
   setCrawlerNotice("Benchmark folder loaded. Run Crawl Folder, then Rebuild Search Index.", "info");

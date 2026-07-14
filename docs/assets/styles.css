@@ -418,6 +418,26 @@ select {
   padding-left: 18px;
 }
 
+.scene-list li {
+  margin-top: 8px;
+}
+
+.scene-list li:has(.mini-frame) {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+}
+
+.mini-frame {
+  width: 64px;
+  aspect-ratio: 16 / 10;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: #0d1013;
+}
+
 .movie-actions button {
   min-height: 32px;
   color: var(--muted);

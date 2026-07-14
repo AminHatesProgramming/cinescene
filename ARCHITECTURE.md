@@ -14,7 +14,7 @@ movies_enriched.json
 triplet generation              offline video crawler
         |                              |
         v                              v
-embedding fine-tuning        scene JSON + keyframes + transcript
+embedding fine-tuning        scene JSON + keyframes + transcript + visual signals
         |                              |
         +--------------+---------------+
                        |
@@ -52,7 +52,8 @@ embedding fine-tuning        scene JSON + keyframes + transcript
   - scene boundary detection with OpenCV
   - keyframe extraction
   - sidecar subtitle parsing
-  - lightweight mood/keyword inference
+  - per-scene brightness/motion/contrast/cut signals
+  - lightweight mood/keyword/visual tag inference
   - movie/series metadata parsing
 
 - `docs/`

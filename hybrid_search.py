@@ -120,6 +120,18 @@ class HybridSearchEngine:
         print(f"Hybrid search ready with {len(self.metadata)} movies")
 
     def _doc_for_meta(self, meta: Dict) -> str:
+        timeline_text = []
+        for scene in meta.get("scene_timeline", []) or []:
+            if isinstance(scene, dict):
+                timeline_text.extend(
+                    [
+                        clean_text(scene.get("visual_caption")),
+                        clean_text(scene.get("transcript")),
+                        " ".join(scene.get("visual_tags", []) or []),
+                        " ".join(scene.get("mood_tags", []) or []),
+                        " ".join(scene.get("keywords", []) or []),
+                    ]
+                )
         return " ".join(
             [
                 clean_text(meta.get("title")),
@@ -127,7 +139,9 @@ class HybridSearchEngine:
                 " ".join(meta.get("genres", []) or []),
                 " ".join(meta.get("mood_tags", []) or []),
                 " ".join(meta.get("keywords", []) or []),
+                " ".join(meta.get("visual_tags", []) or []),
                 " ".join(meta.get("scene_descriptions", []) or []),
+                " ".join(timeline_text),
                 clean_text(meta.get("director")),
                 clean_text(meta.get("rich_text")),
                 clean_text(meta.get("source_video")),
@@ -272,6 +286,10 @@ class HybridSearchEngine:
             "rating": meta.get("rating", meta.get("vote_average", 0.0)),
             "popularity": meta.get("popularity", 0.0),
             "scenes": meta.get("scene_descriptions", []) or [],
+            "scene_timeline": meta.get("scene_timeline", []) or [],
+            "scene_count": meta.get("scene_count"),
+            "first_keyframe": meta.get("first_keyframe"),
+            "visual_tags": meta.get("visual_tags", []) or [],
             "mood": meta.get("mood_tags", []) or [],
             "keywords": meta.get("keywords", []) or [],
             "source": meta.get("source", ""),

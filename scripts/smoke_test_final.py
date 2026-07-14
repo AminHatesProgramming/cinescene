@@ -28,8 +28,10 @@ def main():
 
     crawler = client.get("/api/crawl/status").json()
     assert_true(crawler.get("ok") is True, "crawler status failed")
+    assert_true(crawler.get("crawler_enabled") is True, "crawler is not enabled")
     assert_true(crawler.get("offline_documents", 0) >= 1, "no offline documents indexed")
     assert_true(crawler.get("keyframes", 0) >= 1, "no crawler keyframes found")
+    assert_true(crawler.get("scene_total", 0) >= 1, "no crawler scenes found")
 
     search = client.post(
         "/api/search",
@@ -44,6 +46,7 @@ def main():
     assert_true(results, "search returned no results")
     top = results[0]
     assert_true(top.get("source") == "offline_video_ingestion", f"offline result was not rank 1: {top}")
+    assert_true(top.get("scenes") or top.get("scene_timeline"), "offline result has no scene details")
 
     payload = {
         "ok": True,
@@ -52,10 +55,13 @@ def main():
         "index_vectors": health.get("engine", {}).get("index_vectors"),
         "offline_documents": crawler.get("offline_documents"),
         "keyframes": crawler.get("keyframes"),
+        "scene_total": crawler.get("scene_total"),
+        "crawler_enabled": crawler.get("crawler_enabled"),
         "top_result": {
             "title": top.get("title"),
             "source": top.get("source"),
             "score": top.get("score"),
+            "scene_count": top.get("scene_count"),
         },
     }
     print(json.dumps(payload, indent=2, ensure_ascii=False))

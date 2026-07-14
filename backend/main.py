@@ -66,9 +66,14 @@ class OfflineCrawlRequest(BaseModel):
     root: str = Field(..., min_length=1)
     title_prefix: str = ""
     min_scene_sec: float = Field(8.0, ge=1.0, le=120.0)
+    max_scene_sec: float = Field(90.0, ge=5.0, le=600.0)
     threshold: float = Field(0.45, ge=0.05, le=1.0)
     sample_fps: float = Field(1.0, ge=0.1, le=5.0)
     update_catalog: bool = True
+
+
+class CrawlProbeRequest(BaseModel):
+    root: str = Field(..., min_length=1)
 
 
 class IndexBuildRequest(BaseModel):
@@ -147,6 +152,17 @@ def read_json(path: Path, default):
         return default
 
 
+def keyframe_url(path_value: Optional[str]) -> Optional[str]:
+    if not path_value:
+        return None
+    path = Path(path_value)
+    if not path.exists():
+        candidate = ROOT / path_value
+        if candidate.exists():
+            path = candidate
+    return f"/media/keyframes/{path.name}" if path.name else None
+
+
 def runtime_status():
     cuda = {"available": False, "device": None}
     try:
@@ -175,7 +191,7 @@ def runtime_status():
 
 
 def crawler_status_payload():
-    from ingestion.offline_video import INGESTION_DIR, KEYFRAME_DIR, VIDEO_EXTENSIONS
+    from ingestion.offline_video import INGESTION_DIR, KEYFRAME_DIR, crawler_capabilities
 
     offline_catalog = read_json(OFFLINE_CATALOG_PATH, [])
     combined_catalog = read_json(COMBINED_CATALOG_PATH, [])
@@ -186,12 +202,32 @@ def crawler_status_payload():
     scene_files = sorted(INGESTION_DIR.glob("*_scenes.json"), key=lambda path: path.stat().st_mtime, reverse=True)
     scene_previews = []
     scene_total = 0
-    for scene_file in scene_files[:12]:
+    for index, scene_file in enumerate(scene_files):
         scenes = read_json(scene_file, [])
         if not isinstance(scenes, list):
             continue
         scene_total += len(scenes)
+        if index >= 12:
+            continue
         first = scenes[0] if scenes else {}
+        timeline = []
+        for scene in scenes[:8]:
+            timeline.append(
+                {
+                    "scene_id": scene.get("scene_id"),
+                    "scene_number": scene.get("scene_number"),
+                    "start_sec": scene.get("start_sec"),
+                    "end_sec": scene.get("end_sec"),
+                    "duration_sec": scene.get("duration_sec"),
+                    "visual_caption": scene.get("visual_caption", ""),
+                    "transcript": scene.get("transcript", ""),
+                    "mood_tags": scene.get("mood_tags", []) or [],
+                    "keywords": scene.get("keywords", []) or [],
+                    "visual_tags": scene.get("visual_tags", []) or [],
+                    "keyframe_url": keyframe_url(scene.get("keyframe_path")),
+                    "rich_text": scene.get("rich_text", "")[:900],
+                }
+            )
         scene_previews.append(
             {
                 "file": str(scene_file),
@@ -203,6 +239,8 @@ def crawler_status_payload():
                 "source_video": first.get("source_video", ""),
                 "first_scene": first.get("rich_text", "")[:600],
                 "keyframe_path": first.get("keyframe_path"),
+                "keyframe_url": keyframe_url(first.get("keyframe_path")),
+                "timeline": timeline,
             }
         )
 
@@ -214,18 +252,26 @@ def crawler_status_payload():
     if isinstance(offline_catalog, list):
         series_count = sum(1 for item in offline_catalog if item.get("media_type") == "series")
         movie_count = sum(1 for item in offline_catalog if item.get("media_type") != "series")
+    active_jobs = []
+    with JOBS_LOCK:
+        for job in JOBS.values():
+            if job.get("kind") in {"offline_crawl", "index_rebuild"} and job.get("status") in {"queued", "running"}:
+                active_jobs.append(dict(job))
 
     return {
         "ok": True,
-        "video_extensions": sorted(VIDEO_EXTENSIONS),
+        "crawler_enabled": crawler_capabilities().get("enabled", False),
+        "capabilities": crawler_capabilities(),
         "offline_documents": offline_count,
         "offline_series_documents": series_count,
         "offline_movie_documents": movie_count,
         "combined_documents": combined_count,
         "scene_files": len(scene_files),
-        "scene_total_in_preview_files": scene_total,
+        "scene_total": scene_total,
         "keyframes": keyframe_count,
         "latest_report": latest_report,
+        "report_history": report_rows[-8:] if isinstance(report_rows, list) else [],
+        "active_jobs": active_jobs,
         "scene_previews": scene_previews,
         "paths": {
             "offline_catalog": str(OFFLINE_CATALOG_PATH),
@@ -252,6 +298,35 @@ def health():
 @app.get("/api/crawl/status")
 def crawl_status():
     return crawler_status_payload()
+
+
+@app.post("/api/crawl/probe")
+def crawl_probe(payload: CrawlProbeRequest):
+    try:
+        from ingestion.offline_video import find_sidecar_subtitles, find_video_files, parse_media_identity
+
+        videos = find_video_files(payload.root)
+        preview = []
+        for video in videos[:20]:
+            identity = parse_media_identity(video)
+            preview.append(
+                {
+                    "path": str(video),
+                    "title": identity["title"],
+                    "media_type": identity["media_type"],
+                    "season": identity["season"],
+                    "episode": identity["episode"],
+                    "subtitle_files": [str(path) for path in find_sidecar_subtitles(video)],
+                }
+            )
+        return {
+            "ok": True,
+            "root": payload.root,
+            "videos_found": len(videos),
+            "preview": preview,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/jobs/{job_id}")
@@ -345,6 +420,7 @@ def crawl_offline(payload: OfflineCrawlRequest, sid: str = Header(default="anony
             payload.root,
             title_prefix=payload.title_prefix,
             min_scene_sec=payload.min_scene_sec,
+            max_scene_sec=payload.max_scene_sec,
             threshold=payload.threshold,
             sample_fps=payload.sample_fps,
             update_catalog=payload.update_catalog,
@@ -374,13 +450,28 @@ def run_crawl_job(job_id: str, payload: OfflineCrawlRequest, sid: str):
     try:
         from ingestion.offline_video import crawl_offline_videos
 
+        def progress(event: Dict):
+            total = max(1, int(event.get("total") or 1))
+            processed = int(event.get("processed") or 0)
+            update_job(
+                job_id,
+                status="running",
+                progress=round(min(96, (processed / total) * 100), 2),
+                current_video=event.get("current_video"),
+                stage=event.get("stage"),
+                processed=processed,
+                total=total,
+            )
+
         report = crawl_offline_videos(
             payload.root,
             title_prefix=payload.title_prefix,
             min_scene_sec=payload.min_scene_sec,
+            max_scene_sec=payload.max_scene_sec,
             threshold=payload.threshold,
             sample_fps=payload.sample_fps,
             update_catalog=payload.update_catalog,
+            progress_callback=progress,
         )
         for job in report.get("jobs", []):
             memory.add_ingestion(
@@ -392,6 +483,7 @@ def run_crawl_job(job_id: str, payload: OfflineCrawlRequest, sid: str):
         update_job(
             job_id,
             status="completed",
+            progress=100,
             elapsed_sec=round(time.perf_counter() - start, 3),
             result={
                 "ok": True,
@@ -496,6 +588,14 @@ def rebuild_index_async(payload: IndexBuildRequest):
 
 if FRONTEND_DIR.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
+
+try:
+    from ingestion.offline_video import KEYFRAME_DIR
+
+    KEYFRAME_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount("/media/keyframes", StaticFiles(directory=KEYFRAME_DIR), name="keyframes")
+except Exception:
+    pass
 
 
 @app.get("/")

@@ -1,14 +1,16 @@
 :root {
   color-scheme: dark;
-  --bg: #111315;
-  --panel: #1b1f23;
-  --panel-2: #22272c;
-  --line: #343a40;
-  --text: #f2f0e9;
-  --muted: #a8adb3;
-  --accent: #34c6a8;
-  --accent-2: #e45858;
-  --warn: #e6b450;
+  --bg: #0f1113;
+  --panel: #191d21;
+  --panel-2: #22282e;
+  --panel-3: #121518;
+  --line: #313840;
+  --text: #f3f1ea;
+  --muted: #a7b0b8;
+  --accent: #2dc5a1;
+  --accent-2: #e36b5f;
+  --warn: #dfb75a;
+  --blue: #7ca7ff;
   --shadow: rgba(0, 0, 0, 0.28);
 }
 
@@ -48,7 +50,25 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  background: #15181b;
+  background: linear-gradient(180deg, #171b1f 0%, #131619 100%);
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(45, 197, 161, 0.55);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, transparent 46%, rgba(45, 197, 161, 0.65) 46% 54%, transparent 54%),
+    linear-gradient(180deg, #253039, #111619);
+  box-shadow: inset 0 0 0 6px rgba(255, 255, 255, 0.03), 0 14px 30px rgba(0, 0, 0, 0.22);
 }
 
 .status-cluster {
@@ -134,7 +154,7 @@ button {
 .results-panel,
 .memory-panel {
   background: var(--panel);
-  padding: 18px;
+  padding: 20px;
   min-width: 0;
 }
 
@@ -215,6 +235,17 @@ input[type="file"] {
   background: var(--panel-2);
   border-radius: 8px;
   min-height: 40px;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.primary-button:hover,
+.secondary-button:hover,
+.icon-button:hover,
+.preset-row button:hover,
+.tabs button:hover,
+.movie-actions button:hover {
+  border-color: rgba(45, 197, 161, 0.65);
+  transform: translateY(-1px);
 }
 
 .primary-button {
@@ -265,7 +296,7 @@ input[type="file"] {
 }
 
 .movie-card {
-  background: #171a1e;
+  background: linear-gradient(180deg, #1a1f23 0%, #15191d 100%);
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: 0 14px 30px var(--shadow);
@@ -372,7 +403,7 @@ input[type="file"] {
 
 .side-item {
   border: 1px solid var(--line);
-  background: #171a1e;
+  background: #171c20;
   border-radius: 8px;
   padding: 10px;
   color: var(--muted);
@@ -411,6 +442,42 @@ input[type="file"] {
   color: var(--accent-2);
 }
 
+.notice[data-mode="warn"] {
+  border-color: rgba(223, 183, 90, 0.55);
+  color: var(--warn);
+}
+
+.crawler-header {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-3);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.crawler-header strong,
+.crawler-header span {
+  display: block;
+}
+
+.crawler-header strong {
+  font-size: 15px;
+}
+
+.crawler-header span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.crawler-header span[data-mode="ok"] {
+  color: var(--accent);
+}
+
+.crawler-header span[data-mode="error"] {
+  color: var(--accent-2);
+}
+
 .crawler-dashboard {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -442,7 +509,7 @@ input[type="file"] {
 
 .crawler-options {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -453,8 +520,69 @@ input[type="file"] {
   margin-bottom: 12px;
 }
 
+.crawler-actions.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+
 .crawler-preview {
   margin-top: 12px;
+}
+
+.crawler-hero-frame {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 8px 0;
+  background: #0c0e10;
+}
+
+.scene-timeline {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.scene-card {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid rgba(49, 56, 64, 0.7);
+  background: #12161a;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.scene-thumb {
+  width: 72px;
+  aspect-ratio: 16 / 10;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #090b0d;
+  border: 1px solid var(--line);
+}
+
+.scene-thumb.placeholder {
+  background: linear-gradient(135deg, #1e252b, #111619);
+}
+
+.scene-card strong {
+  margin-bottom: 4px;
+}
+
+.mini-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.mini-chip-row .chip {
+  padding: 3px 6px;
+  font-size: 11px;
 }
 
 .job-panel {

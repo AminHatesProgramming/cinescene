@@ -47,11 +47,12 @@ Use `Ctrl + F5` in the browser after code changes.
 
 Open the `Crawler` tab in the app. It now contains the full workflow:
 
-- crawler health counters: offline docs, scene files, keyframes
+- crawler health counters: offline docs, scene count, keyframes, OpenCV capability
+- path probing before a crawl
 - single video scene detection
 - recursive folder crawling for movies and series
-- tunable scene parameters
-- crawler output preview
+- tunable scene parameters including min/max scene duration
+- crawler output preview with scene timeline, transcript, visual tags, and keyframes
 - background FAISS index rebuild with visible job status
 
 Put local videos in a folder. Series filenames can use this pattern:
@@ -62,12 +63,12 @@ Show.Name.S01E01.srt
 ```
 
 Use the in-app `Offline folder path` field. For the included sample, click
-`Use Benchmark Folder`, then `Crawl Folder`.
+`Benchmark`, then `Probe`, then `Crawl Folder`.
 
 CLI equivalent:
 
 ```powershell
-.\.venv\Scripts\python.exe .\scripts\crawl_offline_videos.py "D:\Series" --min-scene-sec 6 --threshold 0.4
+.\.venv\Scripts\python.exe .\scripts\crawl_offline_videos.py "D:\Series" --min-scene-sec 6 --max-scene-sec 90 --threshold 0.4
 ```
 
 Crawler output should create:
@@ -114,19 +115,20 @@ Healthy output should include:
 
 ```text
 health_ok=True
-search_avg=...
+search_avg=0.607s
 crawler_videos=1
 crawler_documents=1
-crawler_scene_count=...
-crawler_keyframes=...
+crawler_scene_count=3
+crawler_keyframes=3
 crawler_transcript_found=True
+rebuild_time=218.748s
 offline_recall_at_1=3/3
 ```
 
 ## 5. Current Limits To State Honestly
 
 - The crawler processes local/offline files the user has permission to analyze.
-- Scene descriptions are currently visual-feature captions plus subtitle text.
+- Scene descriptions include subtitle text plus brightness, motion, contrast, cut, mood, keyword, and visual-tag signals.
 - For stronger scene understanding, add a vision-language captioner such as BLIP.
 - For dialogue without subtitles, add Whisper speech-to-text.
 - For best retrieval quality, run the BGE fine-tuning pipeline on a working CUDA setup.

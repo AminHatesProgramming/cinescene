@@ -9,9 +9,12 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div>
-          <h1>CineScene</h1>
-          <p>Semantic retrieval for movies, series, and offline scenes</p>
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <h1>CineScene</h1>
+            <p>Semantic retrieval for movies, series, and offline scenes</p>
+          </div>
         </div>
         <div class="status-cluster">
           <div class="system-pill" id="systemStatus">Checking engine</div>
@@ -29,7 +32,7 @@
       <main class="workspace">
         <section class="query-panel">
           <div class="panel-title">
-            <span>Search</span>
+            <span>Semantic Search</span>
             <button class="icon-button" id="clearButton" title="Clear query">Clear</button>
           </div>
 
@@ -85,6 +88,13 @@
           </div>
 
           <div class="tab-view" id="ingestTab">
+            <div class="crawler-header">
+              <div>
+                <strong>Crawler Studio</strong>
+                <span id="crawlerHealth">Checking crawler</span>
+              </div>
+            </div>
+
             <div class="crawler-dashboard">
               <div>
                 <strong id="crawlerDocs">-</strong>
@@ -126,6 +136,10 @@
                   <input id="crawlMinSceneInput" type="number" min="1" max="120" step="1" value="6" />
                 </label>
                 <label>
+                  Max scene sec
+                  <input id="crawlMaxSceneInput" type="number" min="5" max="600" step="5" value="90" />
+                </label>
+                <label>
                   Cut threshold
                   <input id="crawlThresholdInput" type="number" min="0.05" max="1" step="0.05" value="0.4" />
                 </label>
@@ -138,7 +152,10 @@
                 <input id="crawlCatalogInput" type="checkbox" checked />
                 Update searchable catalog
               </label>
-              <button class="icon-button" id="sampleCrawlerPathButton" type="button">Use Benchmark Folder</button>
+              <div class="crawler-actions compact">
+                <button class="icon-button" id="sampleCrawlerPathButton" type="button">Benchmark</button>
+                <button class="icon-button" id="probeCrawlerPathButton" type="button">Probe</button>
+              </div>
               <button class="secondary-button" type="submit">Crawl Folder</button>
             </form>
             <div class="crawler-actions">
@@ -153,6 +170,7 @@
             <div class="notice" id="crawlerNotice">
               Crawl local folders, rebuild the index, then search the extracted scene text.
             </div>
+            <div class="side-list" id="probeList"></div>
             <div class="side-list" id="ingestionList"></div>
             <div class="side-list crawler-preview" id="crawlerPreview"></div>
           </div>

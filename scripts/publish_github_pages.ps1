@@ -56,6 +56,11 @@ git -c "safe.directory=$safeRoot" remote remove origin 2>$null
 git -c "safe.directory=$safeRoot" remote add origin "https://github.com/$repoFullName.git"
 git -c "safe.directory=$safeRoot" push -u origin $Branch
 
+if (Test-Path -LiteralPath "data/processed/cinescene_catalog.json") {
+    Write-Host "Refreshing docs/data/catalog.sample.json"
+    python scripts/build_pwa_catalog.py
+}
+
 if (-not (Test-Path -LiteralPath "docs/index.html")) {
     throw "Missing docs/index.html. Build or restore the PWA before publishing."
 }

@@ -17,6 +17,7 @@ def main():
     parser.add_argument("root", help="Video file or folder to crawl recursively")
     parser.add_argument("--title-prefix", default="", help="Optional title override/prefix")
     parser.add_argument("--min-scene-sec", type=float, default=8.0)
+    parser.add_argument("--max-scene-sec", type=float, default=90.0)
     parser.add_argument("--threshold", type=float, default=0.45)
     parser.add_argument("--sample-fps", type=float, default=1.0)
     parser.add_argument("--no-catalog", action="store_true", help="Do not update offline/combined catalogs")
@@ -26,6 +27,7 @@ def main():
         args.root,
         title_prefix=args.title_prefix,
         min_scene_sec=args.min_scene_sec,
+        max_scene_sec=args.max_scene_sec,
         threshold=args.threshold,
         sample_fps=args.sample_fps,
         update_catalog=not args.no_catalog,

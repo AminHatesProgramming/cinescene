@@ -114,6 +114,7 @@ def main():
                 "root": str(crawl_root),
                 "title_prefix": "Benchmark Show",
                 "min_scene_sec": 2,
+                "max_scene_sec": 6,
                 "threshold": 0.2,
                 "sample_fps": 2,
                 "update_catalog": True,

@@ -20,9 +20,11 @@ import json
 import math
 import re
 import shutil
+import time
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional, Union
 
 
 VIDEO_DIR = Path("data/offline_videos")
@@ -32,11 +34,14 @@ OFFLINE_CATALOG = Path("data/processed/offline_media_enriched.json")
 COMBINED_CATALOG = Path("data/processed/cinescene_catalog.json")
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".wmv"}
 SUBTITLE_EXTENSIONS = {".srt", ".vtt"}
+ANALYSIS_VERSION = "scene-v3"
+MAX_REPORT_HISTORY = 25
 
 
 @dataclass
 class SceneRecord:
     scene_id: str
+    scene_number: int
     movie_title: str
     source_video: str
     start_sec: float
@@ -47,6 +52,11 @@ class SceneRecord:
     transcript: str = ""
     mood_tags: List[str] = field(default_factory=list)
     keywords: List[str] = field(default_factory=list)
+    visual_tags: List[str] = field(default_factory=list)
+    average_brightness: float = 0.0
+    motion_score: float = 0.0
+    contrast_score: float = 0.0
+    cut_score: float = 0.0
     media_type: str = "movie"
     season: Optional[int] = None
     episode: Optional[int] = None
@@ -56,18 +66,29 @@ class SceneRecord:
         parts = [
             f"Title: {self.movie_title}",
             f"Type: {self.media_type}",
+            f"Scene #{self.scene_number}",
             f"Scene time: {self.start_sec:.1f}s to {self.end_sec:.1f}s",
+            f"Duration: {self.duration_sec:.1f}s",
         ]
         if self.season is not None and self.episode is not None:
             parts.append(f"Episode: S{self.season:02d}E{self.episode:02d}")
         if self.visual_caption:
             parts.append(f"Visual scene: {self.visual_caption}")
+        if self.visual_tags:
+            parts.append(f"Visual tags: {', '.join(self.visual_tags)}")
         if self.transcript:
             parts.append(f"Dialogue/transcript: {self.transcript}")
         if self.mood_tags:
             parts.append(f"Mood: {', '.join(self.mood_tags)}")
         if self.keywords:
             parts.append(f"Keywords: {', '.join(self.keywords)}")
+        parts.append(
+            "Signals: "
+            f"brightness={self.average_brightness:.1f}, "
+            f"motion={self.motion_score:.3f}, "
+            f"contrast={self.contrast_score:.1f}, "
+            f"cut={self.cut_score:.3f}"
+        )
         return " | ".join(parts)
 
 
@@ -120,12 +141,27 @@ def parse_media_identity(path: Path, title_override: str = "") -> Dict:
     }
 
 
-def find_sidecar_subtitle(video_path: Path) -> Optional[Path]:
+def find_sidecar_subtitles(video_path: Path) -> List[Path]:
+    matches: List[Path] = []
     for ext in SUBTITLE_EXTENSIONS:
         candidate = video_path.with_suffix(ext)
         if candidate.exists():
-            return candidate
-    return None
+            matches.append(candidate)
+    for ext in SUBTITLE_EXTENSIONS:
+        matches.extend(sorted(video_path.parent.glob(f"{video_path.stem}*{ext}")))
+    deduped = []
+    seen = set()
+    for match in matches:
+        key = str(match.resolve())
+        if key not in seen:
+            seen.add(key)
+            deduped.append(match)
+    return deduped
+
+
+def find_sidecar_subtitle(video_path: Path) -> Optional[Path]:
+    matches = find_sidecar_subtitles(video_path)
+    return matches[0] if matches else None
 
 
 def parse_timestamp(value: str) -> float:
@@ -140,33 +176,48 @@ def parse_timestamp(value: str) -> float:
     return float(value)
 
 
-def load_subtitle_segments(path: Optional[Path]) -> List[Dict]:
-    if not path or not path.exists():
+def load_subtitle_segments(paths: Optional[Union[Iterable[Path], Path]]) -> List[Dict]:
+    if not paths:
         return []
+    if isinstance(paths, Path):
+        subtitle_paths = [paths]
+    else:
+        subtitle_paths = list(paths)
 
-    text = path.read_text(encoding="utf-8", errors="ignore")
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    blocks = re.split(r"\n\s*\n", text)
     segments = []
-    for block in blocks:
-        lines = [line.strip() for line in block.split("\n") if line.strip()]
-        if not lines:
+    for path in subtitle_paths:
+        if not path.exists():
             continue
-        time_line = next((line for line in lines if "-->" in line), "")
-        if not time_line:
-            continue
-        start_raw, end_raw = [part.strip().split(" ")[0] for part in time_line.split("-->", 1)]
-        subtitle_text = " ".join(line for line in lines if line != time_line and not line.isdigit())
-        subtitle_text = re.sub(r"<[^>]+>", "", subtitle_text).strip()
-        if subtitle_text:
-            segments.append(
-                {
-                    "start": parse_timestamp(start_raw),
-                    "end": parse_timestamp(end_raw),
-                    "text": subtitle_text,
-                }
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        text = re.sub(r"^WEBVTT.*?\n", "", text, flags=re.IGNORECASE | re.DOTALL)
+        blocks = re.split(r"\n\s*\n", text)
+        for block in blocks:
+            lines = [line.strip() for line in block.split("\n") if line.strip()]
+            if not lines:
+                continue
+            time_line = next((line for line in lines if "-->" in line), "")
+            if not time_line:
+                continue
+            start_raw, end_raw = [part.strip().split(" ")[0] for part in time_line.split("-->", 1)]
+            subtitle_text = " ".join(
+                line
+                for line in lines
+                if line != time_line and not line.isdigit() and not line.upper().startswith("NOTE")
             )
-    return segments
+            subtitle_text = re.sub(r"<[^>]+>", "", subtitle_text)
+            subtitle_text = re.sub(r"\{[^}]+\}", "", subtitle_text)
+            subtitle_text = re.sub(r"\s+", " ", subtitle_text).strip()
+            if subtitle_text:
+                segments.append(
+                    {
+                        "start": parse_timestamp(start_raw),
+                        "end": parse_timestamp(end_raw),
+                        "text": subtitle_text,
+                        "source": str(path),
+                    }
+                )
+    return sorted(segments, key=lambda item: (item["start"], item["end"]))
 
 
 def subtitle_text_for_range(segments: List[Dict], start_sec: float, end_sec: float, max_chars: int = 700) -> str:
@@ -176,18 +227,20 @@ def subtitle_text_for_range(segments: List[Dict], start_sec: float, end_sec: flo
         if segment["end"] >= start_sec and segment["start"] <= end_sec
     ]
     text = " ".join(parts)
-    return text[:max_chars]
+    return re.sub(r"\s+", " ", text).strip()[:max_chars]
 
 
 def _infer_mood_and_keywords(text: str) -> Dict[str, List[str]]:
     text_lower = text.lower()
     mood_rules = {
-        "dark": ["night", "shadow", "blood", "crime", "alone", "fear", "murder"],
-        "romantic": ["love", "kiss", "wedding", "relationship"],
-        "suspenseful": ["chase", "detective", "mystery", "escape", "threat"],
-        "action": ["fight", "explosion", "gun", "battle", "run"],
-        "science fiction": ["space", "alien", "robot", "future", "planet"],
-        "dramatic": ["cry", "family", "conflict", "loss"],
+        "dark": ["night", "shadow", "blood", "crime", "alone", "fear", "murder", "dark"],
+        "romantic": ["love", "kiss", "wedding", "relationship", "heart", "date"],
+        "suspenseful": ["chase", "detective", "mystery", "escape", "threat", "secret", "investigate"],
+        "action": ["fight", "explosion", "gun", "battle", "run", "attack", "crash"],
+        "science fiction": ["space", "alien", "robot", "future", "planet", "machine", "technology"],
+        "dramatic": ["cry", "family", "conflict", "loss", "death", "argument"],
+        "comic": ["laugh", "joke", "funny", "party"],
+        "tense": ["warning", "danger", "panic", "hide", "locked"],
     }
     moods = [mood for mood, terms in mood_rules.items() if any(term in text_lower for term in terms)]
 
@@ -207,17 +260,86 @@ def _infer_mood_and_keywords(text: str) -> Dict[str, List[str]]:
         "detective",
         "family",
         "love",
+        "mystery",
+        "danger",
+        "future",
+        "alien",
+        "robot",
     ]
-    keywords = [keyword for keyword in keyword_candidates if keyword in text_lower]
-    return {"mood_tags": moods, "keywords": keywords}
+    curated = [keyword for keyword in keyword_candidates if keyword in text_lower]
+    stopwords = {
+        "the", "and", "for", "with", "that", "this", "from", "into", "while", "then", "they",
+        "their", "there", "about", "after", "before", "scene", "visual", "segment", "title",
+        "movie", "series", "type", "time", "duration", "dialogue", "transcript",
+    }
+    words = re.findall(r"[a-zA-Z][a-zA-Z0-9'-]{2,}", text_lower)
+    frequent = [
+        word
+        for word, _ in Counter(words).most_common(12)
+        if word not in stopwords and not word.isdigit()
+    ]
+    keywords = []
+    for keyword in curated + frequent:
+        if keyword not in keywords:
+            keywords.append(keyword)
+    return {"mood_tags": moods[:8], "keywords": keywords[:14]}
 
 
-def _caption_from_visual_features(brightness: float, motion_hint: float, start_sec: float, end_sec: float) -> str:
-    light = "dark low-key" if brightness < 70 else "bright" if brightness > 155 else "balanced"
-    energy = "high-motion" if motion_hint > 0.35 else "quiet"
+def _visual_profile(brightness: float, motion_hint: float, contrast: float) -> Dict[str, List[str] | str]:
+    if brightness < 55:
+        light = "very dark low-key"
+        light_tag = "low-key lighting"
+    elif brightness < 95:
+        light = "dim"
+        light_tag = "dim lighting"
+    elif brightness > 175:
+        light = "bright high-key"
+        light_tag = "bright lighting"
+    else:
+        light = "balanced"
+        light_tag = "balanced lighting"
+
+    if motion_hint > 0.28:
+        energy = "high-motion"
+        motion_tag = "high motion"
+    elif motion_hint > 0.09:
+        energy = "medium-motion"
+        motion_tag = "medium motion"
+    else:
+        energy = "quiet"
+        motion_tag = "quiet scene"
+
+    if contrast > 68:
+        contrast_text = "high contrast"
+        contrast_tag = "high contrast"
+    elif contrast < 32:
+        contrast_text = "soft contrast"
+        contrast_tag = "soft contrast"
+    else:
+        contrast_text = "natural contrast"
+        contrast_tag = "natural contrast"
+
+    tags = [light_tag, motion_tag, contrast_tag]
+    caption = f"A {light}, {energy}, {contrast_text} scene"
+    return {"caption": caption, "tags": tags}
+
+
+def _caption_from_visual_features(
+    brightness: float,
+    motion_hint: float,
+    contrast: float,
+    start_sec: float,
+    end_sec: float,
+) -> Dict[str, List[str] | str]:
+    profile = _visual_profile(brightness, motion_hint, contrast)
     return (
-        f"A {light}, {energy} visual segment from {start_sec:.1f}s to {end_sec:.1f}s. "
-        "Attach a vision-language captioner for object-level scene text."
+        {
+            "caption": (
+                f"{profile['caption']} from {start_sec:.1f}s to {end_sec:.1f}s. "
+                "Transcript and keyframe are attached when available."
+            ),
+            "tags": profile["tags"],
+        }
     )
 
 
@@ -225,6 +347,7 @@ def detect_scenes(
     video_path: str,
     movie_title: str = "",
     min_scene_sec: float = 8.0,
+    max_scene_sec: float = 90.0,
     threshold: float = 0.45,
     sample_fps: float = 1.0,
 ) -> List[SceneRecord]:
@@ -238,7 +361,9 @@ def detect_scenes(
     identity = parse_media_identity(stored_video, movie_title)
     title = identity["title"]
     video_id = _video_hash(stored_video)
-    subtitle_segments = load_subtitle_segments(find_sidecar_subtitle(source) or find_sidecar_subtitle(stored_video))
+    subtitle_segments = load_subtitle_segments(
+        find_sidecar_subtitles(source) + find_sidecar_subtitles(stored_video)
+    )
 
     cap = cv2.VideoCapture(str(stored_video))
     if not cap.isOpened():
@@ -249,13 +374,13 @@ def detect_scenes(
     duration = frame_count / native_fps if frame_count else 0.0
     step = max(1, int(native_fps / max(sample_fps, 0.1)))
     min_scene_frames = int(min_scene_sec * native_fps)
+    max_scene_frames = int(max_scene_sec * native_fps) if max_scene_sec else 0
 
     boundaries = [0]
     frame_no = 0
     previous_hist = None
     previous_frame = None
-    brightness_samples: List[float] = []
-    motion_samples: List[float] = []
+    sample_metrics: List[Dict] = []
 
     while True:
         ok, frame = cap.read()
@@ -268,26 +393,47 @@ def detect_scenes(
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         hist = cv2.calcHist([gray], [0], None, [64], [0, 256])
         cv2.normalize(hist, hist)
-        brightness_samples.append(float(gray.mean()))
+        brightness = float(gray.mean())
+        contrast = float(gray.std())
+        motion = 0.0
 
         if previous_frame is not None:
             diff = cv2.absdiff(gray, previous_frame)
-            motion_samples.append(float(diff.mean() / 255.0))
+            motion = float(diff.mean() / 255.0)
 
+        cut_score = 0.0
         if previous_hist is not None:
-            distance = cv2.compareHist(previous_hist, hist, cv2.HISTCMP_BHATTACHARYYA)
-            if distance >= threshold and frame_no - boundaries[-1] >= min_scene_frames:
+            cut_score = float(cv2.compareHist(previous_hist, hist, cv2.HISTCMP_BHATTACHARYYA))
+            if cut_score >= threshold and frame_no - boundaries[-1] >= min_scene_frames:
                 boundaries.append(frame_no)
 
+        sample_metrics.append(
+            {
+                "frame": frame_no,
+                "time": frame_no / native_fps,
+                "brightness": brightness,
+                "contrast": contrast,
+                "motion": motion,
+                "cut": cut_score,
+            }
+        )
         previous_hist = hist
         previous_frame = gray
         frame_no += 1
 
     cap.release()
-    if frame_count and boundaries[-1] != frame_count - 1:
-        boundaries.append(frame_count - 1)
-    elif not frame_count:
-        boundaries.append(frame_no)
+    final_frame = frame_count - 1 if frame_count else max(0, frame_no - 1)
+    if final_frame > 0 and boundaries[-1] != final_frame:
+        boundaries.append(final_frame)
+
+    if max_scene_frames and max_scene_frames > min_scene_frames:
+        expanded = [boundaries[0]]
+        for boundary in boundaries[1:]:
+            while boundary - expanded[-1] > max_scene_frames:
+                expanded.append(expanded[-1] + max_scene_frames)
+            if boundary - expanded[-1] >= max(1, min_scene_frames) or boundary == final_frame:
+                expanded.append(boundary)
+        boundaries = sorted(set(expanded))
 
     records: List[SceneRecord] = []
     KEYFRAME_DIR.mkdir(parents=True, exist_ok=True)
@@ -301,25 +447,40 @@ def detect_scenes(
             continue
 
         keyframe_path = _extract_keyframe(cv2, stored_video, video_id, scene_index, start_frame, end_frame, native_fps)
-        brightness = brightness_samples[min(scene_index, len(brightness_samples) - 1)] if brightness_samples else 110.0
-        motion = motion_samples[min(scene_index, len(motion_samples) - 1)] if motion_samples else 0.0
-        caption = _caption_from_visual_features(brightness, motion, start_sec, end_sec)
+        metrics = [item for item in sample_metrics if start_frame <= item["frame"] <= end_frame]
+        if metrics:
+            brightness = sum(item["brightness"] for item in metrics) / len(metrics)
+            motion = sum(item["motion"] for item in metrics) / len(metrics)
+            contrast = sum(item["contrast"] for item in metrics) / len(metrics)
+            cut_score = max(item["cut"] for item in metrics)
+        else:
+            brightness = 110.0
+            motion = 0.0
+            contrast = 42.0
+            cut_score = 0.0
+        caption_info = _caption_from_visual_features(brightness, motion, contrast, start_sec, end_sec)
         transcript = subtitle_text_for_range(subtitle_segments, start_sec, end_sec)
-        inferred = _infer_mood_and_keywords(f"{caption} {transcript}")
+        inferred = _infer_mood_and_keywords(f"{caption_info['caption']} {' '.join(caption_info['tags'])} {transcript}")
 
         records.append(
             SceneRecord(
                 scene_id=f"{video_id}-{scene_index + 1:03d}",
+                scene_number=scene_index + 1,
                 movie_title=title,
                 source_video=str(stored_video),
                 start_sec=round(start_sec, 2),
                 end_sec=round(end_sec, 2),
                 duration_sec=round(end_sec - start_sec, 2),
                 keyframe_path=str(keyframe_path) if keyframe_path else None,
-                visual_caption=caption,
+                visual_caption=str(caption_info["caption"]),
                 transcript=transcript,
                 mood_tags=inferred["mood_tags"],
                 keywords=inferred["keywords"],
+                visual_tags=list(caption_info["tags"]),
+                average_brightness=round(brightness, 2),
+                motion_score=round(motion, 4),
+                contrast_score=round(contrast, 2),
+                cut_score=round(cut_score, 4),
                 media_type=identity["media_type"],
                 season=identity["season"],
                 episode=identity["episode"],
@@ -359,7 +520,33 @@ def scene_records_to_movie_document(records: List[SceneRecord]) -> Dict:
     title = records[0].movie_title
     all_moods = sorted({mood for record in records for mood in record.mood_tags})
     all_keywords = sorted({keyword for record in records for keyword in record.keywords})
+    all_visual_tags = sorted({tag for record in records for tag in record.visual_tags})
     scene_descriptions = [record.rich_text for record in records]
+    transcript_text = " ".join(record.transcript for record in records if record.transcript)
+    total_duration = round(max(record.end_sec for record in records) - min(record.start_sec for record in records), 2)
+    timeline = [
+        {
+            "scene_id": record.scene_id,
+            "scene_number": record.scene_number,
+            "start_sec": record.start_sec,
+            "end_sec": record.end_sec,
+            "duration_sec": record.duration_sec,
+            "keyframe_path": record.keyframe_path,
+            "visual_caption": record.visual_caption,
+            "visual_tags": record.visual_tags,
+            "transcript": record.transcript,
+            "mood_tags": record.mood_tags,
+            "keywords": record.keywords,
+            "average_brightness": record.average_brightness,
+            "motion_score": record.motion_score,
+            "contrast_score": record.contrast_score,
+            "cut_score": record.cut_score,
+        }
+        for record in records
+    ]
+    mood_summary = f" Mood profile: {', '.join(all_moods)}." if all_moods else ""
+    keyword_summary = f" Key scene terms: {', '.join(all_keywords[:10])}." if all_keywords else ""
+    transcript_summary = f" Dialogue signal: {transcript_text[:240]}." if transcript_text else ""
 
     return {
         "id": f"offline:{records[0].scene_id.split('-')[0]}",
@@ -371,13 +558,23 @@ def scene_records_to_movie_document(records: List[SceneRecord]) -> Dict:
         "release_year": "",
         "genres": [],
         "keywords": all_keywords,
+        "visual_tags": all_visual_tags,
         "cast": [],
         "director": "",
-        "overview": f"Offline-ingested film document built from {len(records)} detected scenes.",
+        "overview": (
+            f"Offline-ingested {records[0].media_type} document built from "
+            f"{len(records)} detected scenes across {total_duration:.1f}s."
+            f"{mood_summary}{keyword_summary}{transcript_summary}"
+        ),
         "scene_descriptions": scene_descriptions,
+        "scene_timeline": timeline,
+        "scene_count": len(records),
+        "duration_sec": total_duration,
+        "first_keyframe": next((record.keyframe_path for record in records if record.keyframe_path), None),
         "mood_tags": all_moods,
         "rich_text": " | ".join(scene_descriptions),
         "source": "offline_video_ingestion",
+        "analysis_version": ANALYSIS_VERSION,
     }
 
 
@@ -404,42 +601,102 @@ def save_json_list(path: Path, rows: List[Dict]):
         json.dump(rows, f, indent=2, ensure_ascii=False)
 
 
+def crawler_capabilities() -> Dict:
+    try:
+        _import_cv2()
+        opencv = True
+    except Exception:
+        opencv = False
+    return {
+        "enabled": opencv,
+        "opencv": opencv,
+        "subtitle_sidecars": True,
+        "ffmpeg": shutil.which("ffmpeg") is not None,
+        "whisper_optional": shutil.which("whisper") is not None,
+        "vision_captioner_optional": False,
+        "analysis_version": ANALYSIS_VERSION,
+        "supported_video_extensions": sorted(VIDEO_EXTENSIONS),
+        "supported_subtitle_extensions": sorted(SUBTITLE_EXTENSIONS),
+    }
+
+
 def crawl_offline_videos(
     root: str,
     title_prefix: str = "",
     min_scene_sec: float = 8.0,
+    max_scene_sec: float = 90.0,
     threshold: float = 0.45,
     sample_fps: float = 1.0,
     update_catalog: bool = True,
+    progress_callback: Optional[Callable[[Dict], None]] = None,
 ) -> Dict:
+    started = time.perf_counter()
     videos = find_video_files(root)
     documents = []
     jobs = []
 
-    for video in videos:
+    for position, video in enumerate(videos, start=1):
         identity = parse_media_identity(video, title_prefix)
-        scenes = detect_scenes(
-            str(video),
-            movie_title=identity["title"],
-            min_scene_sec=min_scene_sec,
-            threshold=threshold,
-            sample_fps=sample_fps,
-        )
-        document = scene_records_to_movie_document(scenes) if scenes else None
-        if document:
-            document["source_video"] = str(video)
-            documents.append(document)
-        jobs.append(
-            {
-                "video": str(video),
-                "title": identity["title"],
-                "media_type": identity["media_type"],
-                "season": identity["season"],
-                "episode": identity["episode"],
-                "scene_count": len(scenes),
-                "document_id": document["id"] if document else None,
-            }
-        )
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "processing_video",
+                    "current_video": str(video),
+                    "processed": position - 1,
+                    "total": len(videos),
+                }
+            )
+        try:
+            scenes = detect_scenes(
+                str(video),
+                movie_title=identity["title"],
+                min_scene_sec=min_scene_sec,
+                max_scene_sec=max_scene_sec,
+                threshold=threshold,
+                sample_fps=sample_fps,
+            )
+            document = scene_records_to_movie_document(scenes) if scenes else None
+            if document:
+                document["source_video"] = str(video)
+                documents.append(document)
+            jobs.append(
+                {
+                    "status": "completed",
+                    "video": str(video),
+                    "title": identity["title"],
+                    "media_type": identity["media_type"],
+                    "season": identity["season"],
+                    "episode": identity["episode"],
+                    "scene_count": len(scenes),
+                    "keyframe_count": sum(1 for scene in scenes if scene.keyframe_path),
+                    "transcript_found": any(scene.transcript for scene in scenes),
+                    "duration_sec": round(max((scene.end_sec for scene in scenes), default=0), 2),
+                    "document_id": document["id"] if document else None,
+                }
+            )
+        except Exception as exc:
+            jobs.append(
+                {
+                    "status": "failed",
+                    "video": str(video),
+                    "title": identity["title"],
+                    "media_type": identity["media_type"],
+                    "season": identity["season"],
+                    "episode": identity["episode"],
+                    "scene_count": 0,
+                    "document_id": None,
+                    "error": str(exc),
+                }
+            )
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "processed_video",
+                    "current_video": str(video),
+                    "processed": position,
+                    "total": len(videos),
+                }
+            )
 
     if update_catalog and documents:
         existing = load_json_list(OFFLINE_CATALOG)
@@ -456,16 +713,25 @@ def crawl_offline_videos(
         offline_catalog = load_json_list(OFFLINE_CATALOG)
 
     report = {
+        "analysis_version": ANALYSIS_VERSION,
         "root": str(root),
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "videos_found": len(videos),
         "videos_processed": len(jobs),
+        "videos_failed": sum(1 for job in jobs if job.get("status") == "failed"),
         "documents_created": len(documents),
+        "scenes_created": sum(int(job.get("scene_count") or 0) for job in jobs),
+        "keyframes_created": sum(int(job.get("keyframe_count") or 0) for job in jobs),
+        "transcript_documents": sum(1 for job in jobs if job.get("transcript_found")),
+        "elapsed_sec": round(time.perf_counter() - started, 3),
         "offline_catalog": str(OFFLINE_CATALOG),
         "combined_catalog": str(COMBINED_CATALOG),
         "jobs": jobs,
     }
     report_path = INGESTION_DIR / "offline_crawl_report.json"
-    save_json_list(report_path, [report])
+    existing_reports = load_json_list(report_path)
+    existing_reports.append(report)
+    save_json_list(report_path, existing_reports[-MAX_REPORT_HISTORY:])
     return report
 
 

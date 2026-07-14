@@ -87,6 +87,18 @@ class IndexBuilderV2:
         rich_text = clean_text(movie.get("rich_text"))
         if rich_text and "Title:" in rich_text:
             return rich_text
+        timeline_text = []
+        for scene in movie.get("scene_timeline", []) or []:
+            if isinstance(scene, dict):
+                timeline_text.extend(
+                    [
+                        clean_text(scene.get("visual_caption")),
+                        clean_text(scene.get("transcript")),
+                        ", ".join(as_text_list(scene.get("visual_tags", []))),
+                        ", ".join(as_text_list(scene.get("mood_tags", []))),
+                        ", ".join(as_text_list(scene.get("keywords", []))),
+                    ]
+                )
 
         parts = [
             f"Title: {movie_title(movie)}",
@@ -96,9 +108,11 @@ class IndexBuilderV2:
             f"Director: {clean_text(movie.get('director'))}",
             f"Cast: {', '.join(as_text_list(movie.get('cast', []))[:8])}",
             f"Plot: {clean_text(movie.get('overview')) or clean_text(movie.get('wiki_plot')) or clean_text(movie.get('cmu_plot'))}",
-            f"Scenes: {' '.join(as_text_list(movie.get('scene_descriptions', []))[:5])}",
+            f"Scenes: {' '.join(as_text_list(movie.get('scene_descriptions', []))[:30])}",
+            f"Timeline: {' '.join(timeline_text[:80])}",
             f"Mood: {', '.join(as_text_list(movie.get('mood_tags', [])))}",
             f"Keywords: {', '.join(as_text_list(movie.get('keywords', []))[:15])}",
+            f"Visual tags: {', '.join(as_text_list(movie.get('visual_tags', []))[:15])}",
         ]
         return " | ".join(part for part in parts if not part.endswith(": "))
 
@@ -145,9 +159,14 @@ class IndexBuilderV2:
                     "overview": clean_text(movie.get("overview"))[:600],
                     "rating": float(movie.get("vote_average") or 0.0),
                     "popularity": float(movie.get("popularity") or 0.0),
-                    "scene_descriptions": as_text_list(movie.get("scene_descriptions", []))[:5],
+                    "scene_descriptions": as_text_list(movie.get("scene_descriptions", []))[:30],
+                    "scene_timeline": movie.get("scene_timeline", [])[:30] if isinstance(movie.get("scene_timeline"), list) else [],
+                    "scene_count": movie.get("scene_count"),
+                    "duration_sec": movie.get("duration_sec"),
+                    "first_keyframe": movie.get("first_keyframe"),
                     "mood_tags": as_text_list(movie.get("mood_tags", [])),
                     "keywords": as_text_list(movie.get("keywords", []))[:15],
+                    "visual_tags": as_text_list(movie.get("visual_tags", []))[:15],
                     "rich_text": self._movie_document(movie),
                     "source": movie.get("source", "tmdb_enriched"),
                     "source_video": movie.get("source_video", ""),
