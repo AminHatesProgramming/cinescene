@@ -146,14 +146,27 @@ class AppMemory:
                 (session_id, query, movie_title, signal, note),
             )
 
-    def add_ingestion(self, session_id: str, movie_title: str, source_video: str, scenes: List[Dict]):
+    def add_ingestion(
+        self,
+        session_id: str,
+        movie_title: str,
+        source_video: str,
+        scenes: List[Dict],
+        scene_count: Optional[int] = None,
+    ):
         with self.connect() as conn:
             conn.execute(
                 """
                 INSERT INTO ingestions(session_id, movie_title, source_video, scene_count, payload_json)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (session_id, movie_title, source_video, len(scenes), json.dumps(scenes, ensure_ascii=False)),
+                (
+                    session_id,
+                    movie_title,
+                    source_video,
+                    int(scene_count if scene_count is not None else len(scenes)),
+                    json.dumps(scenes, ensure_ascii=False),
+                ),
             )
 
     def ingestions(self, session_id: str, limit: int = 10) -> List[Dict]:

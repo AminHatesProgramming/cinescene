@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from pathlib import Path
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "data" / "processed" / "cinescene_catalog.json"
 OUTPUT_PATH = ROOT / "docs" / "data" / "catalog.sample.json"
 KEYFRAME_OUTPUT = ROOT / "docs" / "assets" / "keyframes"
+DEFAULT_PUBLIC_MEDIA_TITLES = {"benchmark show", "synthetic test"}
 
 
 def clean_text(value) -> str:
@@ -49,12 +51,21 @@ def copy_keyframe(path_value: str) -> str:
     return f"assets/keyframes/{target.name}"
 
 
-def normalize_timeline(movie: Dict) -> List[Dict]:
+def can_publish_media(movie: Dict) -> bool:
+    configured = os.getenv("CINESCENE_PUBLIC_MEDIA_TITLES", "")
+    allowed = DEFAULT_PUBLIC_MEDIA_TITLES | {
+        title.strip().casefold() for title in configured.split(",") if title.strip()
+    }
+    title = clean_text(movie.get("title")) or clean_text(movie.get("original_title"))
+    return title.casefold() in allowed
+
+
+def normalize_timeline(movie: Dict, publish_media: bool) -> List[Dict]:
     timeline = []
     for scene in as_list(movie.get("scene_timeline"))[:12]:
         if not isinstance(scene, dict):
             continue
-        copied_keyframe = copy_keyframe(clean_text(scene.get("keyframe_path")))
+        copied_keyframe = copy_keyframe(clean_text(scene.get("keyframe_path"))) if publish_media else ""
         timeline.append(
             {
                 "scene_number": scene.get("scene_number"),
@@ -96,8 +107,9 @@ def search_text_for(item: Dict) -> str:
 
 
 def to_pwa_item(movie: Dict) -> Dict:
-    timeline = normalize_timeline(movie)
-    poster = copy_keyframe(clean_text(movie.get("first_keyframe")))
+    publish_media = can_publish_media(movie)
+    timeline = normalize_timeline(movie, publish_media=publish_media)
+    poster = copy_keyframe(clean_text(movie.get("first_keyframe"))) if publish_media else ""
     if not poster and timeline:
         poster = clean_text(timeline[0].get("keyframe"))
     scenes = as_list(movie.get("scene_descriptions"))[:20]
@@ -121,7 +133,7 @@ def to_pwa_item(movie: Dict) -> Dict:
         "keywords": as_list(movie.get("keywords"))[:18],
         "visual_tags": as_list(movie.get("visual_tags"))[:12],
         "source": movie.get("source", "tmdb_enriched"),
-        "source_video": clean_text(movie.get("source_video")),
+        "source_video": "",
         "poster": poster,
     }
     item["score_hint"] = 3000 if item["source"] == "offline_video_ingestion" else 0
@@ -132,10 +144,31 @@ def to_pwa_item(movie: Dict) -> Dict:
 def main():
     movies = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
     offline = [movie for movie in movies if movie.get("source") == "offline_video_ingestion"]
-    tmdb = [movie for movie in movies if movie.get("source") != "offline_video_ingestion"]
+    series = [
+        movie
+        for movie in movies
+        if movie.get("source") != "offline_video_ingestion" and movie.get("media_type") == "series"
+    ]
+    tmdb = [
+        movie
+        for movie in movies
+        if movie.get("source") != "offline_video_ingestion" and movie.get("media_type") != "series"
+    ]
     tmdb.sort(key=lambda movie: float(movie.get("popularity") or 0), reverse=True)
-    selected = offline + tmdb[: max(0, 420 - len(offline))]
+    series.sort(key=lambda movie: clean_text(movie.get("title")).casefold())
+    selected = offline + series + tmdb[:600]
     items = [to_pwa_item(movie) for movie in selected]
+    referenced_keyframes = {
+        Path(scene["keyframe"]).name
+        for item in items
+        for scene in item.get("scene_timeline", [])
+        if scene.get("keyframe")
+    }
+    referenced_keyframes.update(Path(item["poster"]).name for item in items if item.get("poster"))
+    if KEYFRAME_OUTPUT.exists():
+        for keyframe in KEYFRAME_OUTPUT.glob("*"):
+            if keyframe.is_file() and keyframe.name not in referenced_keyframes:
+                keyframe.unlink()
     payload = {
         "generated_from": str(CATALOG_PATH.relative_to(ROOT)),
         "count": len(items),

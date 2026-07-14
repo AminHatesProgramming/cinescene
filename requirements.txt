@@ -30,7 +30,8 @@ kaggle>=1.5.16
 
 # Offline video ingestion
 opencv-python>=4.9.0
+scenedetect[opencv]>=0.6.4
+imageio-ffmpeg>=0.5.1
 
-# Optional enrichment ideas for stronger future ingestion:
-# openai-whisper for local speech-to-text
-# transformers + Pillow for BLIP-style keyframe captioning
+# Local speech-to-text for videos without subtitle tracks.
+faster-whisper>=1.1.0

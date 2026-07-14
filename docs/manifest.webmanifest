@@ -1,13 +1,13 @@
 {
   "name": "CineScene",
   "short_name": "CineScene",
-  "description": "Semantic movie, series, and offline scene retrieval.",
+  "description": "Retrieve a movie or episode from a remembered scene, dialogue fragment, visual detail, or mood.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#101317",
-  "theme_color": "#101317",
+  "background_color": "#101214",
+  "theme_color": "#101214",
   "categories": ["entertainment", "productivity", "education"],
   "icons": [
     {
@@ -19,9 +19,9 @@
   ],
   "shortcuts": [
     {
-      "name": "Offline Scene Demo",
-      "short_name": "Offline Scene",
-      "url": "./?q=offline-scene"
+      "name": "Open Scene Lab",
+      "short_name": "Scene Lab",
+      "url": "./#scenes"
     }
   ]
 }

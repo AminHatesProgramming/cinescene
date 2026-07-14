@@ -3,181 +3,253 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CineScene</title>
-    <link rel="stylesheet" href="/assets/styles.css?v=20260620-crawler" />
+    <meta name="theme-color" content="#101214" />
+    <title>CineScene Studio</title>
+    <link rel="icon" href="/assets/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/assets/styles.css?v=20260714-studio-v4" />
   </head>
   <body>
     <div class="app-shell">
-      <header class="topbar">
-        <div class="brand-lockup">
-          <span class="brand-mark" aria-hidden="true"></span>
-          <div>
-            <h1>CineScene</h1>
-            <p>Semantic retrieval for movies, series, and offline scenes</p>
-          </div>
+      <aside class="sidebar">
+        <a class="brand" href="#discover" data-view-link="discover" aria-label="CineScene home">
+          <span class="brand-mark" aria-hidden="true"><span></span></span>
+          <span class="brand-copy"><strong>CineScene</strong><small>Retrieval Studio</small></span>
+        </a>
+
+        <nav class="primary-nav" aria-label="Workspace">
+          <button class="nav-item active" type="button" data-view-link="discover">
+            <i data-lucide="search"></i><span>Discover</span>
+          </button>
+          <button class="nav-item" type="button" data-view-link="ingest">
+            <i data-lucide="scan-line"></i><span>Scene Lab</span><b id="activeJobBadge" hidden>1</b>
+          </button>
+          <button class="nav-item" type="button" data-view-link="library">
+            <i data-lucide="library"></i><span>Library</span>
+          </button>
+          <button class="nav-item" type="button" data-view-link="system">
+            <i data-lucide="activity"></i><span>System</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-status">
+          <span class="status-dot" id="statusDot"></span>
+          <div><strong id="sidebarStatus">Starting engine</strong><small id="sidebarModel">Loading model</small></div>
+          <button class="icon-button ghost" id="reloadButton" type="button" title="Reload engine" aria-label="Reload engine">
+            <i data-lucide="refresh-cw"></i>
+          </button>
         </div>
-        <div class="status-cluster">
-          <div class="system-pill" id="systemStatus">Checking engine</div>
-          <button class="icon-button" id="reloadButton" title="Reload search engine">Reload</button>
-        </div>
-      </header>
+      </aside>
 
-      <section class="metrics-bar" aria-label="System metrics">
-        <div><span id="metricIndexed">-</span><small>Indexed</small></div>
-        <div><span id="metricOffline">-</span><small>Offline docs</small></div>
-        <div><span id="metricModel">-</span><small>Model</small></div>
-        <div><span id="metricCuda">-</span><small>CUDA</small></div>
-      </section>
-
-      <main class="workspace">
-        <section class="query-panel">
-          <div class="panel-title">
-            <span>Semantic Search</span>
-            <button class="icon-button" id="clearButton" title="Clear query">Clear</button>
+      <div class="app-main">
+        <header class="topbar">
+          <button class="icon-button mobile-menu" id="mobileMenuButton" type="button" aria-label="Open navigation">
+            <i data-lucide="menu"></i>
+          </button>
+          <div><span class="eyebrow">Workspace</span><h1 id="viewTitle">Discover</h1></div>
+          <div class="topbar-actions">
+            <div class="engine-chip"><span></span><b id="engineVectorCount">-</b> vectors</div>
+            <button class="button secondary compact" type="button" data-view-link="ingest">
+              <i data-lucide="upload"></i><span>Add video</span>
+            </button>
           </div>
+        </header>
 
-          <textarea
-            id="queryInput"
-            placeholder="A dark science-fiction film with loneliness, strange worlds, and a quiet emotional ending"
-          ></textarea>
-
-          <div class="controls-grid">
-            <label>
-              Results
-              <input id="topKInput" type="number" min="1" max="20" value="8" />
-            </label>
-            <label class="toggle-row">
-              <input id="rerankInput" type="checkbox" checked />
-              Rerank
-            </label>
-          </div>
-
-          <button class="primary-button" id="searchButton">Search Movies</button>
-
-          <div class="preset-row">
-            <button data-query="dark lonely science fiction movie with a mind bending ending">Dark sci-fi</button>
-            <button data-query="romantic comedy in New York with witty dialogue">Rom-com</button>
-            <button data-query="slow suspenseful detective thriller in a rainy city">Detective noir</button>
-            <button data-query="lonely detective enters a dark room and investigates a mystery">Offline scene</button>
-          </div>
-        </section>
-
-        <section class="results-panel">
-          <div class="panel-title">
-            <span>Results</span>
-            <span id="resultCount">No query yet</span>
-          </div>
-          <div id="results" class="results-list empty-state">
-            Describe a scene, mood, plot, or cinematic feeling.
-          </div>
-        </section>
-
-        <aside class="memory-panel">
-          <nav class="tabs" aria-label="Memory tabs">
-            <button class="active" data-tab="history">History</button>
-            <button data-tab="favorites">Favorites</button>
-            <button data-tab="ingest">Crawler</button>
-          </nav>
-
-          <div class="tab-view active" id="historyTab">
-            <div class="side-list" id="historyList"></div>
-          </div>
-
-          <div class="tab-view" id="favoritesTab">
-            <div class="side-list" id="favoriteList"></div>
-          </div>
-
-          <div class="tab-view" id="ingestTab">
-            <div class="crawler-header">
-              <div>
-                <strong>Crawler Studio</strong>
-                <span id="crawlerHealth">Checking crawler</span>
+        <main class="content">
+          <section class="view active" id="discoverView" data-view="discover">
+            <div class="search-stage">
+              <div class="search-heading">
+                <div><span class="section-kicker">Scene-to-title search</span><h2>Describe what you remember.</h2></div>
+                <button class="icon-button ghost" id="clearButton" type="button" title="Clear search" aria-label="Clear search">
+                  <i data-lucide="x"></i>
+                </button>
+              </div>
+              <div class="query-composer">
+                <i data-lucide="sparkles"></i>
+                <textarea id="queryInput" rows="3" dir="auto" placeholder="A detective walks into a dark room while the city lights flicker outside..."></textarea>
+                <button class="button primary search-button" id="searchButton" type="button">
+                  <i data-lucide="search"></i><span>Find scene</span>
+                </button>
+              </div>
+              <div class="search-tools">
+                <div class="prompt-list" aria-label="Example searches">
+                  <button type="button" data-query="a lonely detective enters a dark room and investigates a mystery">Detective noir</button>
+                  <button type="button" data-query="a dream collapses while people run through a rotating hallway">Dream collapse</button>
+                  <button type="button" data-query="کارآگاهی تنها وارد اتاقی تاریک می‌شود و دنبال سرنخ می‌گردد">جست‌وجوی فارسی</button>
+                </div>
+                <div class="search-settings">
+                  <label>Results <input id="topKInput" type="number" min="1" max="20" value="8" /></label>
+                  <label class="switch"><input id="rerankInput" type="checkbox" /><span></span>Rerank</label>
+                </div>
               </div>
             </div>
 
-            <div class="crawler-dashboard">
-              <div>
-                <strong id="crawlerDocs">-</strong>
-                <span>offline docs</span>
-              </div>
-              <div>
-                <strong id="crawlerScenes">-</strong>
-                <span>scene files</span>
-              </div>
-              <div>
-                <strong id="crawlerFrames">-</strong>
-                <span>keyframes</span>
-              </div>
+            <div class="stat-strip" aria-label="Index summary">
+              <div><i data-lucide="clapperboard"></i><span><strong id="metricIndexed">-</strong><small>catalog titles</small></span></div>
+              <div><i data-lucide="scan-line"></i><span><strong id="metricScenes">-</strong><small>scene vectors</small></span></div>
+              <div><i data-lucide="hard-drive"></i><span><strong id="metricOffline">-</strong><small>offline media</small></span></div>
+              <div><i data-lucide="cpu"></i><span><strong id="metricCuda">-</strong><small>compute</small></span></div>
             </div>
 
-            <form id="ingestForm" class="ingest-form">
-              <label>
-                Movie title
-                <input id="movieTitleInput" type="text" placeholder="Optional title" />
-              </label>
-              <label>
-                Offline video
-                <input id="videoInput" type="file" accept="video/*" />
-              </label>
-              <button class="secondary-button" type="submit">Detect Scenes</button>
-            </form>
-            <form id="crawlForm" class="ingest-form">
-              <label>
-                Offline folder path
-                <input id="crawlPathInput" type="text" placeholder="C:\Movies or D:\Series" />
-              </label>
-              <label>
-                Title prefix
-                <input id="crawlTitleInput" type="text" placeholder="Optional series/movie name" />
-              </label>
-              <div class="crawler-options">
-                <label>
-                  Min scene sec
-                  <input id="crawlMinSceneInput" type="number" min="1" max="120" step="1" value="6" />
-                </label>
-                <label>
-                  Max scene sec
-                  <input id="crawlMaxSceneInput" type="number" min="5" max="600" step="5" value="90" />
-                </label>
-                <label>
-                  Cut threshold
-                  <input id="crawlThresholdInput" type="number" min="0.05" max="1" step="0.05" value="0.4" />
-                </label>
-                <label>
-                  Sample FPS
-                  <input id="crawlFpsInput" type="number" min="0.1" max="5" step="0.1" value="1" />
-                </label>
+            <section class="results-section">
+              <div class="section-header">
+                <div><span class="section-kicker">Ranked matches</span><h3>Results</h3></div>
+                <span class="count-label" id="resultCount">Ready</span>
               </div>
-              <label class="toggle-row">
-                <input id="crawlCatalogInput" type="checkbox" checked />
-                Update searchable catalog
-              </label>
-              <div class="crawler-actions compact">
-                <button class="icon-button" id="sampleCrawlerPathButton" type="button">Benchmark</button>
-                <button class="icon-button" id="probeCrawlerPathButton" type="button">Probe</button>
+              <div id="results" class="results-grid empty-results">
+                <div class="empty-visual"><i data-lucide="scan-search"></i></div>
+                <strong>Search by dialogue, action, mood, or a visual memory.</strong>
+                <span>Scene-level matches include a frame, timestamp, and transcript when available.</span>
               </div>
-              <button class="secondary-button" type="submit">Crawl Folder</button>
-            </form>
-            <div class="crawler-actions">
-              <button class="secondary-button" id="rebuildIndexButton" type="button">Rebuild Search Index</button>
-              <button class="icon-button" id="refreshCrawlerButton" type="button">Refresh Status</button>
+            </section>
+          </section>
+
+          <section class="view" id="ingestView" data-view="ingest">
+            <div class="page-heading">
+              <div><span class="section-kicker">Offline intelligence</span><h2>Scene Lab</h2></div>
+              <div class="health-badge" id="crawlerHealth"><span></span>Checking pipeline</div>
             </div>
-            <div class="job-panel" id="jobPanel" hidden>
-              <div class="job-bar"><span id="jobBar"></span></div>
-              <strong id="jobTitle">Working</strong>
-              <span id="jobStatus">Waiting for job status</span>
+
+            <div class="lab-layout">
+              <section class="tool-panel upload-panel">
+                <div class="panel-heading"><span>01</span><div><h3>Media source</h3><small>Video and subtitle tracks</small></div></div>
+                <form id="ingestForm">
+                  <div class="drop-zone" id="videoDropZone" tabindex="0" role="button">
+                    <input id="videoInput" type="file" accept="video/mp4,video/x-matroska,video/webm,video/quicktime,video/*" hidden />
+                    <div class="drop-icon"><i data-lucide="file-video-2"></i></div>
+                    <strong id="videoDropTitle">Drop a video here</strong>
+                    <span id="videoDropMeta">MP4, MKV, MOV, AVI, WEBM</span>
+                    <button class="button secondary compact" type="button" id="chooseVideoButton"><i data-lucide="folder-open"></i>Browse</button>
+                  </div>
+
+                  <div class="file-row" id="selectedVideo" hidden>
+                    <i data-lucide="film"></i><div><strong></strong><span></span></div>
+                    <button class="icon-button ghost" id="removeVideoButton" type="button" aria-label="Remove video"><i data-lucide="trash-2"></i></button>
+                  </div>
+
+                  <label class="field-label">Title or episode name
+                    <input id="movieTitleInput" type="text" placeholder="Auto-detected from filename" />
+                  </label>
+
+                  <div class="subtitle-picker">
+                    <input id="subtitleInput" type="file" accept=".srt,.vtt" multiple hidden />
+                    <div><strong>Subtitle tracks</strong><span id="subtitleSummary">No sidecar selected</span></div>
+                    <button class="button secondary compact" id="chooseSubtitleButton" type="button"><i data-lucide="captions"></i>Add</button>
+                  </div>
+                  <div class="file-stack" id="subtitleList"></div>
+
+                  <div class="analysis-mode">
+                    <span>Analysis profile</span>
+                    <div class="segmented-control" role="group">
+                      <button class="active" type="button" data-analysis-mode="balanced">Balanced</button>
+                      <button type="button" data-analysis-mode="deep">Deep vision</button>
+                    </div>
+                  </div>
+
+                  <div class="option-list">
+                    <label class="option-row"><span><i data-lucide="captions"></i><b>Embedded subtitles</b><small>Extract subtitle streams with FFmpeg</small></span><input id="embeddedSubtitleInput" type="checkbox" checked /></label>
+                    <label class="option-row"><span><i data-lucide="audio-lines"></i><b>Speech transcription</b><small>Generate timed text when subtitles are absent</small></span><input id="transcribeInput" type="checkbox" /></label>
+                    <label class="option-row"><span><i data-lucide="image"></i><b>Visual captioning</b><small>Describe keyframes with the vision model</small></span><input id="visionInput" type="checkbox" /></label>
+                  </div>
+
+                  <details class="advanced-options">
+                    <summary>Scene detection controls <i data-lucide="chevron-down"></i></summary>
+                    <div class="control-grid">
+                      <label>Minimum scene <span><input id="uploadMinSceneInput" type="range" min="1" max="20" step="1" value="4" /><output id="uploadMinSceneValue">4s</output></span></label>
+                      <label>Maximum scene <span><input id="uploadMaxSceneInput" type="range" min="15" max="120" step="5" value="45" /><output id="uploadMaxSceneValue">45s</output></span></label>
+                      <label>Cut sensitivity <span><input id="uploadThresholdInput" type="range" min="0.1" max="0.8" step="0.05" value="0.35" /><output id="uploadThresholdValue">0.35</output></span></label>
+                      <label>Sample rate <span><input id="uploadFpsInput" type="range" min="0.5" max="5" step="0.5" value="2" /><output id="uploadFpsValue">2 fps</output></span></label>
+                    </div>
+                  </details>
+
+                  <button class="button primary full-width" id="startAnalysisButton" type="submit" disabled>
+                    <i data-lucide="scan-line"></i><span>Analyze and index video</span>
+                  </button>
+                </form>
+              </section>
+
+              <section class="tool-panel pipeline-panel">
+                <div class="panel-heading"><span>02</span><div><h3>Live pipeline</h3><small id="pipelineSummary">Waiting for media</small></div></div>
+                <div class="job-progress" id="jobPanel" hidden>
+                  <div class="progress-header"><strong id="jobTitle">Preparing media</strong><b id="jobPercent">0%</b></div>
+                  <div class="progress-track"><span id="jobBar"></span></div>
+                  <span id="jobStatus">Queued</span>
+                </div>
+                <ol class="pipeline-steps" id="pipelineSteps">
+                  <li data-stage="uploaded"><span><i data-lucide="upload-cloud"></i></span><div><strong>Upload</strong><small>Video and subtitle tracks</small></div></li>
+                  <li data-stage="scene_detection"><span><i data-lucide="scissors"></i></span><div><strong>Scene boundaries</strong><small>Adaptive content detection</small></div></li>
+                  <li data-stage="scene_records_ready"><span><i data-lucide="captions"></i></span><div><strong>Scene intelligence</strong><small>Dialogue, keyframes, mood, vision</small></div></li>
+                  <li data-stage="scene_index"><span><i data-lucide="binary"></i></span><div><strong>Vector index</strong><small>One embedding per scene</small></div></li>
+                  <li data-stage="ready"><span><i data-lucide="circle-check"></i></span><div><strong>Search ready</strong><small>Available in Discover</small></div></li>
+                </ol>
+
+                <div class="pipeline-metrics">
+                  <div><strong id="crawlerDocs">-</strong><span>titles</span></div>
+                  <div><strong id="crawlerScenes">-</strong><span>scenes</span></div>
+                  <div><strong id="crawlerFrames">-</strong><span>frames</span></div>
+                </div>
+                <div class="notice" id="crawlerNotice">Pipeline is ready.</div>
+              </section>
             </div>
-            <div class="notice" id="crawlerNotice">
-              Crawl local folders, rebuild the index, then search the extracted scene text.
+
+            <section class="timeline-section">
+              <div class="section-header">
+                <div><span class="section-kicker">Processed media</span><h3>Scene timeline</h3></div>
+                <button class="icon-button ghost" id="refreshCrawlerButton" type="button" title="Refresh timeline" aria-label="Refresh timeline"><i data-lucide="refresh-cw"></i></button>
+              </div>
+              <div id="crawlerPreview" class="media-timeline empty-inline">No processed scenes yet.</div>
+            </section>
+
+            <section class="folder-section">
+              <div class="section-header"><div><span class="section-kicker">Batch workspace</span><h3>Folder crawler</h3></div></div>
+              <form id="crawlForm" class="folder-form">
+                <label class="field-label">Folder path<input id="crawlPathInput" type="text" placeholder="C:\Movies or D:\Series" /></label>
+                <label class="field-label">Title override<input id="crawlTitleInput" type="text" placeholder="Optional" /></label>
+                <button class="button secondary" id="probeCrawlerPathButton" type="button"><i data-lucide="folder-search"></i>Probe</button>
+                <button class="button primary" type="submit"><i data-lucide="scan-line"></i>Crawl folder</button>
+                <input id="crawlMinSceneInput" type="hidden" value="4" />
+                <input id="crawlMaxSceneInput" type="hidden" value="45" />
+                <input id="crawlThresholdInput" type="hidden" value="0.35" />
+                <input id="crawlFpsInput" type="hidden" value="2" />
+                <input id="crawlCatalogInput" type="checkbox" checked hidden />
+              </form>
+              <div class="probe-grid" id="probeList"></div>
+            </section>
+          </section>
+
+          <section class="view" id="libraryView" data-view="library">
+            <div class="page-heading"><div><span class="section-kicker">Personal workspace</span><h2>Library</h2></div></div>
+            <div class="library-grid">
+              <section><div class="section-header"><div><span class="section-kicker">Recent</span><h3>Search history</h3></div></div><div class="library-list" id="historyList"></div></section>
+              <section><div class="section-header"><div><span class="section-kicker">Saved</span><h3>Favorites</h3></div></div><div class="library-list" id="favoriteList"></div></section>
+              <section><div class="section-header"><div><span class="section-kicker">Local media</span><h3>Ingestions</h3></div></div><div class="library-list" id="ingestionList"></div></section>
             </div>
-            <div class="side-list" id="probeList"></div>
-            <div class="side-list" id="ingestionList"></div>
-            <div class="side-list crawler-preview" id="crawlerPreview"></div>
-          </div>
-        </aside>
-      </main>
+          </section>
+
+          <section class="view" id="systemView" data-view="system">
+            <div class="page-heading">
+              <div><span class="section-kicker">Runtime</span><h2>System</h2></div>
+              <button class="button secondary compact" id="rebuildIndexButton" type="button"><i data-lucide="database-backup"></i>Rebuild indexes</button>
+            </div>
+            <div class="system-grid" id="systemGrid">
+              <div class="system-card"><span>Search engine</span><strong id="systemSearchState">Checking</strong><small id="systemSearchDetail">-</small></div>
+              <div class="system-card"><span>Scene detector</span><strong id="systemDetectorState">Checking</strong><small id="systemDetectorDetail">-</small></div>
+              <div class="system-card"><span>Subtitle engine</span><strong id="systemSubtitleState">Checking</strong><small id="systemSubtitleDetail">-</small></div>
+              <div class="system-card"><span>Vision engine</span><strong id="systemVisionState">Checking</strong><small id="systemVisionDetail">-</small></div>
+            </div>
+            <section class="diagnostic-panel"><div class="section-header"><div><span class="section-kicker">Index diagnostics</span><h3>Runtime report</h3></div></div><pre id="runtimeReport">Loading...</pre></section>
+          </section>
+        </main>
+      </div>
     </div>
 
-    <script src="/assets/app.js?v=20260620-crawler"></script>
+    <dialog id="playerDialog" class="player-dialog">
+      <div class="player-topbar"><div><strong id="playerTitle">Scene preview</strong><span id="playerTimecode">00:00</span></div><button class="icon-button ghost" id="closePlayerButton" type="button" aria-label="Close player"><i data-lucide="x"></i></button></div>
+      <video id="scenePlayer" controls preload="metadata"></video>
+      <div class="player-caption" id="playerCaption"></div>
+    </dialog>
+
+    <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+    <script src="/assets/lucide.min.js?v=0.468.0"></script>
+    <script src="/assets/app.js?v=20260714-studio-v4"></script>
   </body>
 </html>

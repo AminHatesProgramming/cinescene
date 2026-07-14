@@ -16,6 +16,9 @@ logs/
 server.err.log
 server.out.log
 .gh-pages-worktree/
+node_modules/
+artifacts/
+.downloads/
 data/app_memory.sqlite
 data/index/
 data/offline_videos/

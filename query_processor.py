@@ -1,10 +1,4 @@
-"""
-CineScene query processor.
-
-Extracts lightweight filters and expands scene/mood phrases before semantic
-retrieval. Spelling correction is optional so the app can still run when
-pyspellchecker is not installed.
-"""
+"""Query normalization, Persian expansion, and lightweight search filters."""
 
 from __future__ import annotations
 
@@ -39,38 +33,69 @@ class QueryProcessor:
             "fantasy": "Fantasy",
             "animation": "Animation",
             "documentary": "Documentary",
+            "اکشن": "Action",
+            "کمدی": "Comedy",
+            "درام": "Drama",
+            "وحشت": "Horror",
+            "ترسناک": "Horror",
+            "هیجانی": "Thriller",
+            "عاشقانه": "Romance",
+            "علمی تخیلی": "Science Fiction",
+            "فانتزی": "Fantasy",
+            "انیمیشن": "Animation",
+            "مستند": "Documentary",
         }
 
-        self.mood_keywords = {
+        self.expansions = {
             "dark": ["noir", "gritty", "mysterious", "bleak", "suspenseful"],
             "lonely": ["isolation", "solitude", "melancholic", "quiet"],
             "funny": ["comedy", "humorous", "witty"],
             "sad": ["tragic", "emotional", "melancholic"],
             "romantic": ["love", "relationship", "heartwarming"],
             "mind bending": ["surreal", "twist", "dreamlike", "psychological"],
-            "تنها": ["lonely", "isolation", "solitude"],
-            "تاریک": ["dark", "noir", "bleak"],
-            "عاشقانه": ["romantic", "love", "relationship"],
-            "ترسناک": ["horror", "scary", "haunted"],
-            "علمی": ["science fiction", "future", "space"],
-        }
-
-        self.scene_patterns = {
             "chase": ["car chase", "pursuit", "running"],
             "fight": ["battle", "combat", "brawl"],
             "explosion": ["blast", "bomb", "destruction"],
             "detective": ["investigation", "mystery", "crime"],
             "space": ["spaceship", "alien", "future"],
             "dream": ["surreal", "subconscious", "mind bending"],
-            "تعقیب": ["chase", "pursuit"],
+            "toy": ["toys", "plaything", "animated objects"],
+            "hacker": ["computer hacker", "cyberpunk", "virtual reality"],
+            "simulation": ["virtual reality", "artificial world", "digital reality"],
+            "تنها": ["lonely", "isolation", "solitude"],
+            "تاریک": ["dark", "noir", "bleak"],
+            "عاشقانه": ["romantic", "love", "relationship"],
+            "ترسناک": ["horror", "scary", "haunted"],
+            "علمی تخیلی": ["science fiction", "future", "space"],
+            "غمگین": ["sad", "tragic", "emotional"],
+            "مرموز": ["mysterious", "suspenseful", "secret"],
+            "هیجان انگیز": ["thrilling", "tense", "suspenseful"],
+            "آرام": ["quiet", "slow", "calm"],
+            "رویا": ["dreamlike", "surreal", "subconscious"],
+            "تعقیب": ["chase", "pursuit", "running"],
             "فضا": ["space", "spaceship", "science fiction"],
             "کارآگاه": ["detective", "investigation", "crime"],
+            "دعوا": ["fight", "combat", "battle"],
+            "انفجار": ["explosion", "blast", "destruction"],
+            "باران": ["rain", "rainy", "wet city"],
+            "جنگل": ["forest", "woods", "wilderness"],
+            "ماشین": ["car", "vehicle", "driving"],
+            "قطار": ["train", "railway", "station"],
+            "بیمارستان": ["hospital", "doctor", "medical"],
+            "زندان": ["prison", "jail", "cell"],
+            "قتل": ["murder", "crime", "death"],
+            "فرار": ["escape", "running away", "fugitive"],
+            "بوسه": ["kiss", "romance", "couple"],
+            "مهمانی": ["party", "crowd", "celebration"],
         }
+
+    @staticmethod
+    def normalize_unicode(query: str) -> str:
+        return query.replace("ي", "ی").replace("ك", "ک").replace("‌", " ")
 
     def correct_spelling(self, query: str) -> str:
         if not self.spell:
             return query
-
         corrected = []
         for word in query.split():
             if len(word) <= 3 or not word.isascii() or word[0].isupper():
@@ -83,7 +108,6 @@ class QueryProcessor:
     def extract_filters(self, query: str) -> Dict:
         filters = {"genres": [], "year_range": None, "director": None}
         query_lower = query.lower()
-
         years = [int(year) for year in re.findall(r"\b(19\d{2}|20\d{2})\b", query)]
         if len(years) == 1:
             filters["year_range"] = (years[0], years[0])
@@ -97,7 +121,6 @@ class QueryProcessor:
         director_match = re.search(r"(?:by|directed by)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)", query)
         if director_match:
             filters["director"] = director_match.group(1)
-
         return filters
 
     def clean_query(self, query: str) -> str:
@@ -108,19 +131,17 @@ class QueryProcessor:
     def expand_query(self, query: str) -> str:
         expanded_terms = [query]
         query_lower = query.lower()
-
-        for phrase, synonyms in {**self.mood_keywords, **self.scene_patterns}.items():
+        for phrase, synonyms in self.expansions.items():
             if phrase in query_lower:
-                expanded_terms.extend(synonyms[:3])
-
+                expanded_terms.extend(synonyms[:4])
         return " ".join(dict.fromkeys(term for term in expanded_terms if term))
 
     def process(self, query: str) -> Dict:
-        corrected = self.correct_spelling(query)
+        normalized = self.normalize_unicode(query)
+        corrected = self.correct_spelling(normalized)
         filters = self.extract_filters(corrected)
         cleaned = self.clean_query(corrected)
         expanded = self.expand_query(cleaned)
-
         return {
             "original": query,
             "corrected": corrected,

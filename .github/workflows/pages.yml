@@ -26,9 +26,14 @@ jobs:
           test -f docs/sw.js
           test -f docs/assets/app.js
           test -f docs/assets/styles.css
+          test -f docs/assets/lucide.min.js
+          test -f docs/assets/manrope-latin.woff2
+          test -f docs/assets/vazirmatn-arabic.woff2
           test -f docs/data/catalog.sample.json
           python -m json.tool docs/manifest.webmanifest > /dev/null
           python -m json.tool docs/data/catalog.sample.json > /dev/null
 
       - name: Validate browser JavaScript
-        run: node --check docs/assets/app.js
+        run: |
+          node --check docs/assets/app.js
+          node --check docs/sw.js

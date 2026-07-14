@@ -7,13 +7,16 @@ rank fusion, optional cross-encoder reranking, and query-time filters.
 
 from __future__ import annotations
 
+import os
 import pickle
 import json
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import faiss
 import numpy as np
+import torch
 from query_processor import QueryProcessor
 from sentence_transformers import SentenceTransformer
 
@@ -97,14 +100,34 @@ class HybridSearchEngine:
             )
 
         print(f"Loading embedding model: {self.model_path}")
-        self.model = SentenceTransformer(self.model_path)
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        use_fp16 = self.device == "cuda" and os.getenv("CINESCENE_EMBEDDING_FP16", "0") == "1"
+        self.precision = "float16" if use_fp16 else "float32"
+        self.model = SentenceTransformer(self.model_path, device=self.device)
+        self.model.max_seq_length = min(
+            int(self.model.max_seq_length),
+            max(64, int(os.getenv("CINESCENE_EMBEDDING_MAX_SEQ", "256"))),
+        )
+        if use_fp16:
+            self.model.half()
 
         print(f"Loading FAISS index: {self.index_path}")
         self.index = faiss.read_index(self.index_path)
 
         print(f"Loading metadata: {self.metadata_path}")
         with open(self.metadata_path, "rb") as f:
-            self.metadata = pickle.load(f)
+            self.movie_metadata = pickle.load(f)
+
+        from scene_index import load_scene_index
+
+        self.scene_index, self.scene_metadata = load_scene_index(expected_dimension=int(self.index.d))
+        self.scene_offset = len(self.movie_metadata)
+        self.metadata = self.movie_metadata + self.scene_metadata
+        self.parent_metadata = {
+            str(item.get("id")): item
+            for item in self.movie_metadata
+            if item.get("id") is not None
+        }
 
         self.query_processor = QueryProcessor()
         self._build_lexical_index()
@@ -117,7 +140,10 @@ class HybridSearchEngine:
             except Exception as exc:
                 print(f"Cross-encoder unavailable, continuing without reranking: {exc}")
 
-        print(f"Hybrid search ready with {len(self.metadata)} movies")
+        print(
+            f"Hybrid search ready with {len(self.movie_metadata)} titles and "
+            f"{len(self.scene_metadata)} scene vectors"
+        )
 
     def _doc_for_meta(self, meta: Dict) -> str:
         timeline_text = []
@@ -149,22 +175,55 @@ class HybridSearchEngine:
         )
 
     def _build_lexical_index(self):
-        self.lexical_docs = [self._doc_for_meta(meta).lower().split() for meta in self.metadata]
+        self.lexical_docs = [self._lexical_tokens(self._doc_for_meta(meta)) for meta in self.metadata]
+        self.lexical_sets = [set(tokens) for tokens in self.lexical_docs]
+        self.title_token_sets = [set(self._lexical_tokens(meta.get("title", ""))) for meta in self.metadata]
+        self.transcript_token_sets = []
+        for meta in self.metadata:
+            scene = meta.get("matched_scene") or {}
+            transcript = scene.get("transcript", "") if isinstance(scene, dict) else ""
+            self.transcript_token_sets.append(set(self._lexical_tokens(transcript)))
         if BM25Okapi is not None:
             self.bm25 = BM25Okapi(self.lexical_docs)
         else:
             self.bm25 = None
 
+    @staticmethod
+    def _lexical_tokens(text: str) -> List[str]:
+        tokens = re.findall(r"[^\W_]+", clean_text(text).lower(), flags=re.UNICODE)
+        normalized = []
+        for token in tokens:
+            if token.isascii():
+                if len(token) > 4 and token.endswith("ies"):
+                    token = token[:-3] + "y"
+                elif len(token) > 4 and token.endswith("es") and token[-3] in {"s", "x", "z"}:
+                    token = token[:-2]
+                elif len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+                    token = token[:-1]
+            if len(token) > 2:
+                normalized.append(token)
+        return normalized
+
     def vector_search(self, query: str, k: int = 50) -> List[Tuple[int, float]]:
-        k = min(k, len(self.metadata))
         query_emb = self.model.encode(query, convert_to_numpy=True, normalize_embeddings=True).astype("float32")
         query_emb = query_emb.reshape(1, -1)
-        distances, indices = self.index.search(query_emb, k)
-        return [(int(idx), float(score)) for idx, score in zip(indices[0], distances[0]) if int(idx) >= 0]
+        movie_k = min(k, len(self.movie_metadata))
+        distances, indices = self.index.search(query_emb, movie_k)
+        results = [(int(idx), float(score)) for idx, score in zip(indices[0], distances[0]) if int(idx) >= 0]
+
+        if self.scene_index is not None and self.scene_metadata:
+            scene_k = min(max(k, 80), len(self.scene_metadata))
+            scene_distances, scene_indices = self.scene_index.search(query_emb, scene_k)
+            results.extend(
+                (self.scene_offset + int(idx), float(score))
+                for idx, score in zip(scene_indices[0], scene_distances[0])
+                if int(idx) >= 0
+            )
+        return sorted(results, key=lambda item: item[1], reverse=True)
 
     def lexical_search(self, query: str, k: int = 50) -> List[Tuple[int, float]]:
         k = min(k, len(self.metadata))
-        query_tokens = query.lower().split()
+        query_tokens = self._lexical_tokens(query)
         if self.bm25 is not None:
             scores = self.bm25.get_scores(query_tokens)
         else:
@@ -174,15 +233,17 @@ class HybridSearchEngine:
         return [(int(idx), float(scores[idx])) for idx in top_indices]
 
     def direct_overlap_search(self, query: str, k: int = 50) -> List[Tuple[int, float]]:
-        terms = {term for term in query.lower().split() if len(term) > 2}
+        terms = set(self._lexical_tokens(query))
         if not terms:
             return []
         scored = []
         for idx, meta in enumerate(self.metadata):
-            doc = self._doc_for_meta(meta).lower()
-            overlap = sum(1 for term in terms if term in doc)
+            doc_terms = self.lexical_sets[idx]
+            overlap = len(terms & doc_terms)
             if overlap:
-                source_bonus = 1 if meta.get("source") == "offline_video_ingestion" else 0
+                transcript_terms = self.transcript_token_sets[idx]
+                transcript_overlap = len(terms & transcript_terms)
+                source_bonus = min(2, transcript_overlap) if meta.get("record_type") == "scene" else 0
                 scored.append((idx, float(overlap + source_bonus)))
         scored.sort(key=lambda item: item[1], reverse=True)
         return scored[:k]
@@ -201,20 +262,22 @@ class HybridSearchEngine:
         return sorted(scores.items(), key=lambda item: item[1], reverse=True)
 
     def lexical_boost(self, query: str, results: List[Tuple[int, float]]) -> List[Tuple[int, float]]:
-        query_terms = {term for term in query.lower().split() if len(term) > 2}
+        query_terms = set(self._lexical_tokens(query))
         if not query_terms:
             return results
 
         boosted = []
         for idx, score in results:
             meta = self.metadata[idx]
-            doc = self._doc_for_meta(meta).lower()
-            title = clean_text(meta.get("title")).lower()
-            overlap = sum(1 for term in query_terms if term in doc)
-            title_overlap = sum(1 for term in query_terms if term in title)
+            doc_terms = self.lexical_sets[idx]
+            title_terms = self.title_token_sets[idx]
+            overlap = len(query_terms & doc_terms)
+            title_overlap = len(query_terms & title_terms)
             source_boost = 0.0
-            if meta.get("source") == "offline_video_ingestion" and overlap >= 2:
-                source_boost = min(0.14, 0.025 * overlap)
+            if meta.get("record_type") == "scene" and overlap >= 2:
+                transcript_terms = self.transcript_token_sets[idx]
+                transcript_overlap = len(query_terms & transcript_terms)
+                source_boost = min(0.12, 0.022 * transcript_overlap) if transcript_overlap >= 2 else min(0.012, 0.002 * overlap)
             boosted.append((idx, score + overlap * 0.003 + title_overlap * 0.008 + source_boost))
         boosted.sort(key=lambda item: item[1], reverse=True)
         return boosted
@@ -258,7 +321,7 @@ class HybridSearchEngine:
         selected = candidates[:top_k]
         for idx, _ in selected:
             meta = self.metadata[idx]
-            doc_text = f"{meta.get('title', '')}. {meta.get('overview', '')}. {' '.join(meta.get('mood_tags', []) or [])}"
+            doc_text = self._doc_for_meta(meta)[:1800]
             pairs.append([query, doc_text])
 
         ce_scores = self.cross_encoder.predict(pairs)
@@ -269,11 +332,17 @@ class HybridSearchEngine:
         reranked.sort(key=lambda item: item[1], reverse=True)
         return reranked + candidates[top_k:]
 
-    def _format_result(self, idx: int, score: float, rank: int) -> Dict:
-        meta = self.metadata[idx]
+    def _format_result(self, idx: int, score: float, rank: int, matched_scenes: Optional[List[Dict]] = None) -> Dict:
+        candidate = self.metadata[idx]
+        parent_id = candidate.get("parent_id") or candidate.get("id")
+        meta = candidate if candidate.get("record_type") == "scene" else self.parent_metadata.get(str(parent_id), candidate)
+        scene_matches = matched_scenes or []
+        timeline = meta.get("scene_timeline", []) or []
+        if not timeline and scene_matches:
+            timeline = scene_matches
         return {
             "rank": rank,
-            "id": meta.get("id"),
+            "id": parent_id,
             "title": meta.get("title", "Unknown"),
             "media_type": meta.get("media_type", "movie"),
             "season": meta.get("season"),
@@ -286,7 +355,9 @@ class HybridSearchEngine:
             "rating": meta.get("rating", meta.get("vote_average", 0.0)),
             "popularity": meta.get("popularity", 0.0),
             "scenes": meta.get("scene_descriptions", []) or [],
-            "scene_timeline": meta.get("scene_timeline", []) or [],
+            "scene_timeline": timeline,
+            "matched_scene": scene_matches[0] if scene_matches else None,
+            "matched_scenes": scene_matches,
             "scene_count": meta.get("scene_count"),
             "first_keyframe": meta.get("first_keyframe"),
             "visual_tags": meta.get("visual_tags", []) or [],
@@ -296,6 +367,28 @@ class HybridSearchEngine:
             "source_video": meta.get("source_video", ""),
             "score": round(float(score), 4),
         }
+
+    def _collapse_titles(self, results: List[Tuple[int, float]]) -> List[Tuple[int, float, List[Dict]]]:
+        grouped: Dict[str, Dict] = {}
+        for idx, score in results:
+            meta = self.metadata[idx]
+            parent_id = str(meta.get("parent_id") or meta.get("id") or f"row:{idx}")
+            group = grouped.setdefault(parent_id, {"idx": idx, "score": score, "scenes": []})
+            if score > group["score"]:
+                group["idx"] = idx
+                group["score"] = score
+            scene = meta.get("matched_scene")
+            if meta.get("record_type") == "scene" and isinstance(scene, dict):
+                scene_with_score = dict(scene)
+                scene_with_score["match_score"] = round(float(score), 4)
+                group["scenes"].append(scene_with_score)
+
+        collapsed = []
+        for group in grouped.values():
+            scenes = sorted(group["scenes"], key=lambda item: item.get("match_score", 0), reverse=True)
+            coverage_bonus = min(0.012, max(0, len(scenes) - 1) * 0.002)
+            collapsed.append((group["idx"], float(group["score"]) + coverage_bonus, scenes[:5]))
+        return sorted(collapsed, key=lambda item: item[1], reverse=True)
 
     def search(self, query: str, top_k: int = 10, use_reranking: bool = True) -> List[Dict]:
         processed = self.query_processor.process(query)
@@ -314,13 +407,21 @@ class HybridSearchEngine:
         if use_reranking:
             fused_results = self.cross_encoder_rerank(search_query, fused_results, top_k=min(20, len(fused_results)))
 
-        return [self._format_result(idx, score, rank + 1) for rank, (idx, score) in enumerate(fused_results[:top_k])]
+        collapsed = self._collapse_titles(fused_results)
+        return [
+            self._format_result(idx, score, rank + 1, matched_scenes=scenes)
+            for rank, (idx, score, scenes) in enumerate(collapsed[:top_k])
+        ]
 
     def status(self) -> Dict:
         return {
-            "movies": len(self.metadata),
-            "index_vectors": int(self.index.ntotal),
+            "movies": len(self.movie_metadata),
+            "scene_vectors": len(self.scene_metadata),
+            "index_vectors": int(self.index.ntotal) + (int(self.scene_index.ntotal) if self.scene_index is not None else 0),
+            "movie_vectors": int(self.index.ntotal),
             "model": self.model_path,
+            "device": self.device,
+            "precision": self.precision,
             "index_path": self.index_path,
             "metadata_path": self.metadata_path,
             "reranker": bool(self.cross_encoder),

@@ -9,6 +9,7 @@ saves both v2 and legacy index filenames for compatibility.
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import pickle
 from pathlib import Path
@@ -16,6 +17,7 @@ from typing import Dict, Iterable, List
 
 import faiss
 import numpy as np
+import torch
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
@@ -68,13 +70,24 @@ class IndexBuilderV2:
         model_path: str = "models/cinescene-v2/final",
         use_base_model: bool = False,
         batch_size: int = 16,
+        max_seq_length: int = 256,
+        fp16: bool = False,
     ):
         self.model_path = resolve_model_path(model_path, use_base_model)
         self.batch_size = batch_size
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.precision = "float16" if self.device == "cuda" and fp16 else "float32"
+        self.max_seq_length = max(64, int(max_seq_length))
         print(f"Loading embedding model: {self.model_path}")
-        self.model = SentenceTransformer(self.model_path)
+        self.model = SentenceTransformer(self.model_path, device=self.device)
+        self.model.max_seq_length = min(int(self.model.max_seq_length), self.max_seq_length)
+        if self.precision == "float16":
+            self.model.half()
         self.dimension = self.model.get_sentence_embedding_dimension()
-        print(f"Embedding dimension: {self.dimension}")
+        print(
+            f"Embedding dimension: {self.dimension} "
+            f"({self.device}, {self.precision}, max_seq={self.model.max_seq_length})"
+        )
 
     def load_enriched_data(self, path: str) -> List[Dict]:
         with open(path, "r", encoding="utf-8") as f:
@@ -199,6 +212,10 @@ class IndexBuilderV2:
             "movies_indexed": len(metadata),
             "embedding_dimension": self.dimension,
             "model": self.model_path,
+            "device": self.device,
+            "precision": self.precision,
+            "batch_size": self.batch_size,
+            "max_seq_length": self.model.max_seq_length,
             "index_path": str(index_path_obj),
             "metadata_path": str(metadata_path_obj),
             "legacy_files_written": save_legacy,
@@ -220,6 +237,10 @@ class IndexBuilderV2:
         index = self.build_faiss_index(embeddings, use_hnsw=use_hnsw)
         metadata = self.prepare_metadata(movies)
         self.save_index(index, metadata, index_path=index_path, metadata_path=metadata_path)
+        del self.model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         print("Index building complete")
 
 
@@ -232,6 +253,8 @@ def parse_args():
     parser.add_argument("--base-model", action="store_true")
     parser.add_argument("--flat", action="store_true")
     parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--max-seq-length", type=int, default=256)
+    parser.add_argument("--fp16", action="store_true", help="Use FP16 on CUDA (usually faster on RTX GPUs)")
     return parser.parse_args()
 
 
@@ -241,6 +264,8 @@ def main():
         model_path=args.model,
         use_base_model=args.base_model,
         batch_size=args.batch_size,
+        max_seq_length=args.max_seq_length,
+        fp16=args.fp16,
     )
     builder.build_and_save(
         enriched_path=args.input,

@@ -1,0 +1,149 @@
+{
+  "generated_at": "2026-07-14T18:33:15.396792+00:00",
+  "model": "models\\bge-large-en-v1.5",
+  "device": "cuda",
+  "precision": "float32",
+  "embedding_dimension": 1024,
+  "reranker": true,
+  "cases": 10,
+  "hit_at_1": 0.7,
+  "hit_at_5": 0.8,
+  "mrr_at_10": 0.7333,
+  "mean_latency_sec": 1.4972,
+  "movie_vectors": 7615,
+  "scene_vectors": 158,
+  "index_vectors": 7773,
+  "rows": [
+    {
+      "query": "a thief enters layered dreams to plant an idea",
+      "expected": [
+        "Inception"
+      ],
+      "rank": null,
+      "top_3": [
+        "In Dreams",
+        "The Number 23",
+        "Bronson"
+      ],
+      "latency_sec": 2.204
+    },
+    {
+      "query": "a marine meets blue aliens on the moon Pandora",
+      "expected": [
+        "Avatar"
+      ],
+      "rank": 1,
+      "top_3": [
+        "Avatar",
+        "Creature",
+        "Journey to Saturn"
+      ],
+      "latency_sec": 1.198
+    },
+    {
+      "query": "an amnesiac man uses tattoos and notes to find a killer",
+      "expected": [
+        "Memento"
+      ],
+      "rank": 1,
+      "top_3": [
+        "Memento",
+        "Bride of Chucky",
+        "Spider-Man 3"
+      ],
+      "latency_sec": 1.272
+    },
+    {
+      "query": "toys come alive when their owner leaves the room",
+      "expected": [
+        "Toy Story"
+      ],
+      "rank": 1,
+      "top_3": [
+        "Toy Story",
+        "Toy Story 2",
+        "The Mexican"
+      ],
+      "latency_sec": 1.695
+    },
+    {
+      "query": "a giant shark terrorizes a seaside town",
+      "expected": [
+        "Jaws"
+      ],
+      "rank": 1,
+      "top_3": [
+        "Jaws",
+        "Jaws 2",
+        "Sharknado"
+      ],
+      "latency_sec": 1.195
+    },
+    {
+      "query": "a computer hacker discovers reality is a simulation",
+      "expected": [
+        "The Matrix"
+      ],
+      "rank": 3,
+      "top_3": [
+        "Hackers",
+        "The Thirteenth Floor",
+        "The Matrix"
+      ],
+      "latency_sec": 1.084
+    },
+    {
+      "query": "a romance aboard a ship that hits an iceberg",
+      "expected": [
+        "Titanic"
+      ],
+      "rank": 1,
+      "top_3": [
+        "Titanic",
+        "Mamma Mia!",
+        "Dracula"
+      ],
+      "latency_sec": 1.223
+    },
+    {
+      "query": "a hobbit carries a powerful ring toward a volcano",
+      "expected": [
+        "The Lord of the Rings",
+        "The Fellowship of the Ring"
+      ],
+      "rank": 1,
+      "top_3": [
+        "The Lord of the Rings: The Fellowship of the Ring",
+        "Thor",
+        "The Conjuring"
+      ],
+      "latency_sec": 1.251
+    },
+    {
+      "query": "lonely detective enters a dark room and investigates a mystery",
+      "expected": [
+        "Benchmark Show"
+      ],
+      "rank": 1,
+      "top_3": [
+        "Benchmark Show",
+        "Insomnia",
+        "Sea of Love"
+      ],
+      "latency_sec": 2.192
+    },
+    {
+      "query": "کارآگاهی تنها وارد اتاق تاریک می‌شود و دنبال سرنخ می‌گردد",
+      "expected": [
+        "Benchmark Show"
+      ],
+      "rank": null,
+      "top_3": [
+        "In the Valley of Elah",
+        "Dark Blue",
+        "Sabotage"
+      ],
+      "latency_sec": 1.658
+    }
+  ]
+}

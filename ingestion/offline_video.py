@@ -22,7 +22,7 @@ import re
 import shutil
 import time
 from collections import Counter
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Union
 
@@ -31,10 +31,11 @@ VIDEO_DIR = Path("data/offline_videos")
 INGESTION_DIR = Path("data/processed/video_ingestion")
 KEYFRAME_DIR = INGESTION_DIR / "keyframes"
 OFFLINE_CATALOG = Path("data/processed/offline_media_enriched.json")
+SERIES_CATALOG = Path("data/processed/tv_series_enriched.json")
 COMBINED_CATALOG = Path("data/processed/cinescene_catalog.json")
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".wmv"}
 SUBTITLE_EXTENSIONS = {".srt", ".vtt"}
-ANALYSIS_VERSION = "scene-v3"
+ANALYSIS_VERSION = "scene-v4"
 MAX_REPORT_HISTORY = 25
 
 
@@ -57,6 +58,8 @@ class SceneRecord:
     motion_score: float = 0.0
     contrast_score: float = 0.0
     cut_score: float = 0.0
+    caption_source: str = "visual_signals"
+    subtitle_sources: List[str] = field(default_factory=list)
     media_type: str = "movie"
     season: Optional[int] = None
     episode: Optional[int] = None
@@ -74,10 +77,13 @@ class SceneRecord:
             parts.append(f"Episode: S{self.season:02d}E{self.episode:02d}")
         if self.visual_caption:
             parts.append(f"Visual scene: {self.visual_caption}")
+            parts.append(f"Caption source: {self.caption_source}")
         if self.visual_tags:
             parts.append(f"Visual tags: {', '.join(self.visual_tags)}")
         if self.transcript:
             parts.append(f"Dialogue/transcript: {self.transcript}")
+        if self.subtitle_sources:
+            parts.append(f"Transcript sources: {', '.join(self.subtitle_sources)}")
         if self.mood_tags:
             parts.append(f"Mood: {', '.join(self.mood_tags)}")
         if self.keywords:
@@ -122,6 +128,26 @@ def _safe_title(title: str, fallback: str) -> str:
     return title if title else Path(fallback).stem
 
 
+def clean_media_title(value: str) -> str:
+    """Remove common release/file tags while preserving years that belong to a title."""
+
+    title = (value or "").strip()
+    release_boundary = re.search(
+        r"(?i)(?:[ ._-]+)(?:19|20)\d{2}(?=[ ._-]+(?:2160p|1080p|720p|480p|web(?:[ ._-]*dl)?|bluray|brrip|dvdrip|hdtv|x26[45]|hevc)\b)",
+        title,
+    )
+    if release_boundary:
+        title = title[: release_boundary.start()]
+    title = re.sub(
+        r"(?i)[ ._-]+(?:2160p|1080p|720p|480p|web(?:[ ._-]*dl)?|bluray|brrip|dvdrip|hdtv|x26[45]|hevc|aac).*$",
+        "",
+        title,
+    )
+    title = re.sub(r"(?i)\((?:\d+|[^)]*(?:movies?|mkv|web|bluray|torrent)[^)]*)\)", " ", title)
+    title = re.sub(r"[._-]+", " ", title)
+    return re.sub(r"\s+", " ", title).strip()
+
+
 def parse_media_identity(path: Path, title_override: str = "") -> Dict:
     name = path.stem
     match = re.search(r"[Ss](\d{1,2})[ ._-]*[Ee](\d{1,2})", name)
@@ -130,7 +156,7 @@ def parse_media_identity(path: Path, title_override: str = "") -> Dict:
     media_type = "series" if match else "movie"
 
     cleaned = re.sub(r"[Ss]\d{1,2}[ ._-]*[Ee]\d{1,2}.*", "", name)
-    cleaned = re.sub(r"[._-]+", " ", cleaned).strip()
+    cleaned = clean_media_title(cleaned or name)
     title = _safe_title(title_override, cleaned or name)
 
     return {
@@ -343,6 +369,34 @@ def _caption_from_visual_features(
     )
 
 
+def _scenedetect_boundaries(video_path: Path, native_fps: float, min_scene_sec: float, sensitivity: float) -> List[int]:
+    """Use PySceneDetect's adaptive detector when the optional package is available."""
+
+    try:
+        from scenedetect import SceneManager, open_video
+        from scenedetect.detectors import AdaptiveDetector
+
+        video = open_video(str(video_path))
+        manager = SceneManager()
+        manager.add_detector(
+            AdaptiveDetector(
+                adaptive_threshold=max(1.5, 1.5 + float(sensitivity) * 5.0),
+                min_scene_len=max(1, int(min_scene_sec * native_fps)),
+                min_content_val=8.0,
+                window_width=2,
+            )
+        )
+        manager.detect_scenes(video, show_progress=False)
+        scene_list = manager.get_scene_list(start_in_scene=True)
+        if not scene_list:
+            return []
+        boundaries = [int(scene_list[0][0].get_frames())]
+        boundaries.extend(int(scene[1].get_frames()) for scene in scene_list)
+        return sorted(set(boundaries))
+    except Exception:
+        return []
+
+
 def detect_scenes(
     video_path: str,
     movie_title: str = "",
@@ -350,6 +404,12 @@ def detect_scenes(
     max_scene_sec: float = 90.0,
     threshold: float = 0.45,
     sample_fps: float = 1.0,
+    extract_embedded_subtitles: bool = True,
+    transcribe_audio: bool = False,
+    enable_vision: bool = False,
+    whisper_model: str = "small",
+    vision_model: str = "Salesforce/blip-image-captioning-base",
+    progress_callback: Optional[Callable[[Dict], None]] = None,
 ) -> List[SceneRecord]:
     cv2 = _import_cv2()
 
@@ -361,9 +421,19 @@ def detect_scenes(
     identity = parse_media_identity(stored_video, movie_title)
     title = identity["title"]
     video_id = _video_hash(stored_video)
-    subtitle_segments = load_subtitle_segments(
-        find_sidecar_subtitles(source) + find_sidecar_subtitles(stored_video)
+    from ingestion.media_intelligence import caption_keyframe, resolve_subtitle_files
+
+    sidecars = find_sidecar_subtitles(source) + find_sidecar_subtitles(stored_video)
+    subtitle_resolution = resolve_subtitle_files(
+        stored_video,
+        sidecars,
+        INGESTION_DIR / "transcripts",
+        extract_embedded=extract_embedded_subtitles,
+        transcribe=transcribe_audio,
+        whisper_model=whisper_model,
     )
+    subtitle_paths = subtitle_resolution["paths"]
+    subtitle_segments = load_subtitle_segments(subtitle_paths)
 
     cap = cv2.VideoCapture(str(stored_video))
     if not cap.isOpened():
@@ -376,7 +446,10 @@ def detect_scenes(
     min_scene_frames = int(min_scene_sec * native_fps)
     max_scene_frames = int(max_scene_sec * native_fps) if max_scene_sec else 0
 
-    boundaries = [0]
+    boundaries = _scenedetect_boundaries(stored_video, native_fps, min_scene_sec, threshold)
+    library_boundaries = len(boundaries) > 1
+    if not boundaries:
+        boundaries = [0]
     frame_no = 0
     previous_hist = None
     previous_frame = None
@@ -403,8 +476,10 @@ def detect_scenes(
 
         cut_score = 0.0
         if previous_hist is not None:
-            cut_score = float(cv2.compareHist(previous_hist, hist, cv2.HISTCMP_BHATTACHARYYA))
-            if cut_score >= threshold and frame_no - boundaries[-1] >= min_scene_frames:
+            histogram_delta = float(cv2.compareHist(previous_hist, hist, cv2.HISTCMP_BHATTACHARYYA))
+            pixel_delta = motion
+            cut_score = min(1.0, histogram_delta * 0.72 + pixel_delta * 1.15)
+            if not library_boundaries and cut_score >= threshold and frame_no - boundaries[-1] >= min_scene_frames:
                 boundaries.append(frame_no)
 
         sample_metrics.append(
@@ -420,11 +495,20 @@ def detect_scenes(
         previous_hist = hist
         previous_frame = gray
         frame_no += 1
+        if progress_callback and frame_count:
+            progress_callback(
+                {
+                    "stage": "scene_detection",
+                    "fraction": min(0.82, frame_no / max(1, frame_count) * 0.82),
+                    "current_video": str(stored_video),
+                }
+            )
 
     cap.release()
-    final_frame = frame_count - 1 if frame_count else max(0, frame_no - 1)
+    final_frame = frame_count if frame_count else max(0, frame_no - 1)
     if final_frame > 0 and boundaries[-1] != final_frame:
         boundaries.append(final_frame)
+    boundaries = sorted(set(boundary for boundary in boundaries if 0 <= boundary <= final_frame))
 
     if max_scene_frames and max_scene_frames > min_scene_frames:
         expanded = [boundaries[0]]
@@ -459,6 +543,12 @@ def detect_scenes(
             contrast = 42.0
             cut_score = 0.0
         caption_info = _caption_from_visual_features(brightness, motion, contrast, start_sec, end_sec)
+        caption_source = "visual_signals"
+        if enable_vision and keyframe_path:
+            semantic_caption = caption_keyframe(Path(keyframe_path), model_name=vision_model)
+            if semantic_caption:
+                caption_info["caption"] = f"{semantic_caption}. {caption_info['caption']}"
+                caption_source = "blip+visual_signals"
         transcript = subtitle_text_for_range(subtitle_segments, start_sec, end_sec)
         inferred = _infer_mood_and_keywords(f"{caption_info['caption']} {' '.join(caption_info['tags'])} {transcript}")
 
@@ -481,6 +571,8 @@ def detect_scenes(
                 motion_score=round(motion, 4),
                 contrast_score=round(contrast, 2),
                 cut_score=round(cut_score, 4),
+                caption_source=caption_source,
+                subtitle_sources=[Path(path).name for path in subtitle_paths],
                 media_type=identity["media_type"],
                 season=identity["season"],
                 episode=identity["episode"],
@@ -488,6 +580,8 @@ def detect_scenes(
         )
 
     save_scene_records(records, video_id)
+    if progress_callback:
+        progress_callback({"stage": "scene_records_ready", "fraction": 1.0, "current_video": str(stored_video)})
     return records
 
 
@@ -541,6 +635,8 @@ def scene_records_to_movie_document(records: List[SceneRecord]) -> Dict:
             "motion_score": record.motion_score,
             "contrast_score": record.contrast_score,
             "cut_score": record.cut_score,
+            "caption_source": record.caption_source,
+            "subtitle_sources": record.subtitle_sources,
         }
         for record in records
     ]
@@ -575,6 +671,53 @@ def scene_records_to_movie_document(records: List[SceneRecord]) -> Dict:
         "rich_text": " | ".join(scene_descriptions),
         "source": "offline_video_ingestion",
         "analysis_version": ANALYSIS_VERSION,
+        "transcript_sources": sorted({source for record in records for source in record.subtitle_sources}),
+        "vision_enriched": any(record.caption_source != "visual_signals" for record in records),
+    }
+
+
+def rebuild_offline_catalog_from_scene_files() -> Dict:
+    """Recover searchable documents from every persisted scene analysis file."""
+
+    allowed = {item.name for item in fields(SceneRecord)}
+    recovered: Dict[str, Dict] = {}
+    failures = []
+    for scene_file in sorted(INGESTION_DIR.glob("*_scenes.json")):
+        try:
+            rows = load_json_list(scene_file)
+            records = []
+            for index, row in enumerate(rows, start=1):
+                if not isinstance(row, dict):
+                    continue
+                payload = {key: value for key, value in row.items() if key in allowed}
+                payload.setdefault("scene_number", index)
+                payload.setdefault("caption_source", "visual_signals")
+                payload.setdefault("subtitle_sources", [])
+                payload["movie_title"] = clean_media_title(str(payload.get("movie_title") or "")) or "Unknown"
+                records.append(SceneRecord(**payload))
+            if records:
+                document = scene_records_to_movie_document(records)
+                document["source_video"] = records[0].source_video
+                recovered[str(document["id"])] = document
+        except Exception as exc:
+            failures.append({"file": str(scene_file), "error": str(exc)})
+
+    existing = load_json_list(OFFLINE_CATALOG)
+    by_id = {str(item.get("id")): item for item in existing if item.get("id")}
+    by_id.update(recovered)
+    offline_catalog = list(by_id.values())
+    save_json_list(OFFLINE_CATALOG, offline_catalog)
+    tmdb_catalog = load_json_list(Path("data/processed/movies_enriched.json"))
+    series_catalog = load_json_list(SERIES_CATALOG)
+    save_json_list(COMBINED_CATALOG, tmdb_catalog + series_catalog + offline_catalog)
+    return {
+        "documents": len(offline_catalog),
+        "recovered_documents": len(recovered),
+        "scene_files": len(list(INGESTION_DIR.glob("*_scenes.json"))),
+        "scenes": sum(int(item.get("scene_count") or 0) for item in offline_catalog),
+        "failures": failures,
+        "offline_catalog": str(OFFLINE_CATALOG),
+        "combined_catalog": str(COMBINED_CATALOG),
     }
 
 
@@ -607,13 +750,26 @@ def crawler_capabilities() -> Dict:
         opencv = True
     except Exception:
         opencv = False
+    from ingestion.media_intelligence import intelligence_capabilities
+
+    intelligence = intelligence_capabilities()
+    try:
+        import scenedetect  # noqa: F401
+
+        scene_detector = "PySceneDetect AdaptiveDetector"
+    except Exception:
+        scene_detector = "OpenCV adaptive fallback"
     return {
         "enabled": opencv,
         "opencv": opencv,
         "subtitle_sidecars": True,
-        "ffmpeg": shutil.which("ffmpeg") is not None,
-        "whisper_optional": shutil.which("whisper") is not None,
-        "vision_captioner_optional": False,
+        "ffmpeg": intelligence["ffmpeg"],
+        "embedded_subtitles": intelligence["embedded_subtitles"],
+        "whisper_optional": intelligence["faster_whisper"],
+        "vision_captioner_optional": intelligence["vision_captioning"],
+        "vision_model": intelligence["vision_model"],
+        "whisper_model": intelligence["whisper_model"],
+        "scene_detector": scene_detector,
         "analysis_version": ANALYSIS_VERSION,
         "supported_video_extensions": sorted(VIDEO_EXTENSIONS),
         "supported_subtitle_extensions": sorted(SUBTITLE_EXTENSIONS),
@@ -628,6 +784,11 @@ def crawl_offline_videos(
     threshold: float = 0.45,
     sample_fps: float = 1.0,
     update_catalog: bool = True,
+    extract_embedded_subtitles: bool = True,
+    transcribe_audio: bool = False,
+    enable_vision: bool = False,
+    whisper_model: str = "small",
+    vision_model: str = "Salesforce/blip-image-captioning-base",
     progress_callback: Optional[Callable[[Dict], None]] = None,
 ) -> Dict:
     started = time.perf_counter()
@@ -647,6 +808,20 @@ def crawl_offline_videos(
                 }
             )
         try:
+            def scene_progress(event: Dict):
+                if not progress_callback:
+                    return
+                fraction = max(0.0, min(1.0, float(event.get("fraction") or 0.0)))
+                progress_callback(
+                    {
+                        "stage": event.get("stage", "scene_detection"),
+                        "current_video": str(video),
+                        "processed": position - 1,
+                        "total": len(videos),
+                        "overall_fraction": ((position - 1) + fraction) / max(1, len(videos)),
+                    }
+                )
+
             scenes = detect_scenes(
                 str(video),
                 movie_title=identity["title"],
@@ -654,6 +829,12 @@ def crawl_offline_videos(
                 max_scene_sec=max_scene_sec,
                 threshold=threshold,
                 sample_fps=sample_fps,
+                extract_embedded_subtitles=extract_embedded_subtitles,
+                transcribe_audio=transcribe_audio,
+                enable_vision=enable_vision,
+                whisper_model=whisper_model,
+                vision_model=vision_model,
+                progress_callback=scene_progress,
             )
             document = scene_records_to_movie_document(scenes) if scenes else None
             if document:
@@ -670,6 +851,8 @@ def crawl_offline_videos(
                     "scene_count": len(scenes),
                     "keyframe_count": sum(1 for scene in scenes if scene.keyframe_path),
                     "transcript_found": any(scene.transcript for scene in scenes),
+                    "transcript_sources": sorted({source for scene in scenes for source in scene.subtitle_sources}),
+                    "vision_enriched": any(scene.caption_source != "visual_signals" for scene in scenes),
                     "duration_sec": round(max((scene.end_sec for scene in scenes), default=0), 2),
                     "document_id": document["id"] if document else None,
                 }
@@ -707,7 +890,8 @@ def crawl_offline_videos(
         save_json_list(OFFLINE_CATALOG, offline_catalog)
 
         tmdb_catalog = load_json_list(Path("data/processed/movies_enriched.json"))
-        combined = tmdb_catalog + offline_catalog
+        series_catalog = load_json_list(SERIES_CATALOG)
+        combined = tmdb_catalog + series_catalog + offline_catalog
         save_json_list(COMBINED_CATALOG, combined)
     else:
         offline_catalog = load_json_list(OFFLINE_CATALOG)
@@ -723,6 +907,7 @@ def crawl_offline_videos(
         "scenes_created": sum(int(job.get("scene_count") or 0) for job in jobs),
         "keyframes_created": sum(int(job.get("keyframe_count") or 0) for job in jobs),
         "transcript_documents": sum(1 for job in jobs if job.get("transcript_found")),
+        "vision_documents": sum(1 for job in jobs if job.get("vision_enriched")),
         "elapsed_sec": round(time.perf_counter() - started, 3),
         "offline_catalog": str(OFFLINE_CATALOG),
         "combined_catalog": str(COMBINED_CATALOG),
