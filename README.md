@@ -21,7 +21,7 @@ CineScene lets a user describe a plot, scene, mood, or cinematic feeling and get
 
 ### GitHub Pages PWA
 
-The public PWA lives in `docs/` and is deployed by GitHub Actions.
+The public PWA source lives in `docs/`. The live site is served from the `gh-pages` branch.
 
 ```text
 https://aminhatesprogramming.github.io/cinescene
@@ -152,24 +152,24 @@ offline_recall_at_1=3/3
 - `scripts/smoke_test_final.py`: quick final readiness test
 - `scripts/benchmark_cinescene.py`: full benchmark
 - `scripts/publish_github_pages.ps1`: create/push the GitHub repository when `GH_TOKEN` is available
-- `.github/workflows/pages.yml`: GitHub Pages deployment
+- `.github/workflows/pages.yml`: static PWA validation
 
 ## Publish To GitHub Pages
 
-Create a GitHub Personal Access Token with `repo` and `workflow` permissions, then run:
+Create a GitHub Personal Access Token with `repo` permission, then run:
 
 ```powershell
 $env:GH_TOKEN = "YOUR_TOKEN_HERE"
 .\scripts\publish_github_pages.ps1
 ```
 
-The script creates/pushes:
+The script creates/pushes the main repository and publishes `docs/` to the `gh-pages` branch:
 
 ```text
 https://github.com/aminhatesprogramming/cinescene
 ```
 
-GitHub Actions then deploys:
+GitHub Pages then serves:
 
 ```text
 https://aminhatesprogramming.github.io/cinescene

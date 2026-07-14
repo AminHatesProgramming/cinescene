@@ -15,6 +15,7 @@ env/
 logs/
 server.err.log
 server.out.log
+.gh-pages-worktree/
 data/app_memory.sqlite
 data/index/
 data/offline_videos/

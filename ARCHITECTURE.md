@@ -63,7 +63,7 @@ embedding fine-tuning        scene JSON + keyframes + transcript
 
 ## Deployment Strategy
 
-GitHub Pages can only host static files, so the public site is a polished PWA showcase from `docs/`.
+GitHub Pages can only host static files, so the public site is a polished PWA showcase generated from `docs/` and served from the `gh-pages` branch.
 
 The full production-style local system is still available through FastAPI:
 

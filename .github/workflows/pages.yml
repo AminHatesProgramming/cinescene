@@ -1,4 +1,4 @@
-name: Deploy CineScene PWA
+name: Validate CineScene PWA
 
 on:
   push:
@@ -7,33 +7,28 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: pwa-validation
+  cancel-in-progress: true
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
+      - name: Validate static PWA files
+        run: |
+          test -f docs/index.html
+          test -f docs/manifest.webmanifest
+          test -f docs/sw.js
+          test -f docs/assets/app.js
+          test -f docs/assets/styles.css
+          test -f docs/data/catalog.sample.json
+          python -m json.tool docs/manifest.webmanifest > /dev/null
+          python -m json.tool docs/data/catalog.sample.json > /dev/null
 
-      - name: Upload PWA artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Validate browser JavaScript
+        run: node --check docs/assets/app.js
