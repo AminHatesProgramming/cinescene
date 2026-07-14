@@ -3,125 +3,193 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#101317" />
-    <meta
-      name="description"
-      content="CineScene is a semantic movie and offline scene retrieval PWA."
-    />
-    <title>CineScene PWA</title>
+    <meta name="theme-color" content="#101214" />
+    <meta name="description" content="CineScene retrieves movies and series from a remembered scene." />
+    <title>CineScene Retrieval Studio</title>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./assets/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./assets/icon.svg" />
-    <link rel="stylesheet" href="./assets/styles.css?v=20260714-scene-v3" />
+  <link rel="stylesheet" href="./assets/styles.css?v=20260714-studio-v7" />
   </head>
   <body>
     <div class="app-shell">
-      <header class="topbar">
-        <div class="brand">
-          <span class="brand-mark" aria-hidden="true"></span>
-          <div>
-            <h1>CineScene</h1>
-            <p>Semantic movie, series, and offline scene retrieval</p>
-          </div>
+      <aside class="sidebar" id="sidebar">
+        <a class="brand" href="#discover" data-view-link="discover" aria-label="CineScene home">
+          <span class="brand-mark" aria-hidden="true"><span></span></span>
+          <span class="brand-copy"><strong>CineScene</strong><small>Retrieval Studio</small></span>
+        </a>
+
+        <nav class="primary-nav" aria-label="Workspace">
+          <button class="nav-item active" type="button" data-view-link="discover">
+            <i data-lucide="search"></i><span>Discover</span>
+          </button>
+          <button class="nav-item" type="button" data-view-link="scenes">
+            <i data-lucide="scan-line"></i><span>Scene Lab</span>
+          </button>
+          <button class="nav-item" type="button" data-view-link="library">
+            <i data-lucide="library"></i><span>Library</span>
+          </button>
+          <button class="nav-item" type="button" data-view-link="system">
+            <i data-lucide="activity"></i><span>System</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-status">
+          <span class="status-dot" id="statusDot"></span>
+          <div><strong id="sidebarStatus">Loading catalog</strong><small id="sidebarModel">Public PWA showcase</small></div>
+          <button class="icon-button ghost" id="installButton" type="button" title="Install app" aria-label="Install app" hidden>
+            <i data-lucide="download"></i>
+          </button>
         </div>
-        <div class="top-actions">
-          <span class="status-pill" id="statusPill">Loading catalog</span>
-          <button class="ghost-button" id="installButton" type="button" hidden>Install</button>
-        </div>
-      </header>
+      </aside>
 
-      <section class="metrics" aria-label="Catalog metrics">
-        <div><strong id="metricCatalog">-</strong><span>catalog items</span></div>
-        <div><strong id="metricOffline">-</strong><span>offline scenes</span></div>
-        <div><strong id="metricMode">PWA</strong><span>deploy mode</span></div>
-        <div><strong id="metricLatency">-</strong><span>last search</span></div>
-      </section>
-
-      <main class="workspace">
-        <section class="search-panel" aria-label="Search">
-          <div class="panel-heading">
-            <span>Query</span>
-            <button class="ghost-button" id="clearButton" type="button">Clear</button>
+      <div class="app-main">
+        <header class="topbar">
+          <button class="icon-button mobile-menu" id="mobileMenuButton" type="button" aria-label="Open navigation">
+            <i data-lucide="menu"></i>
+          </button>
+          <div><span class="eyebrow">Public workspace</span><h1 id="viewTitle">Discover</h1></div>
+          <div class="topbar-actions">
+            <div class="engine-chip"><span></span><b id="metricCatalog">-</b> titles</div>
+            <button class="button secondary compact" type="button" data-view-link="scenes">
+              <i data-lucide="upload"></i><span>Add video</span>
+            </button>
           </div>
-          <textarea
-            id="queryInput"
-            spellcheck="false"
-            placeholder="A suspenseful detective mystery in a dark room"
-          ></textarea>
+        </header>
 
-          <div class="control-grid">
-            <label>
-              Results
-              <input id="topKInput" type="number" min="3" max="20" value="8" />
-            </label>
-            <label>
-              Source
-              <select id="sourceFilter">
-                <option value="all">All sources</option>
-                <option value="offline_video_ingestion">Offline crawler</option>
-                <option value="tmdb_enriched">TMDB enriched</option>
-              </select>
-            </label>
-          </div>
-
-          <div class="preset-row" aria-label="Demo queries">
-            <button data-query="suspenseful detective mystery in a dark room">Offline crawler</button>
-            <button data-query="dark lonely science fiction movie with a mind bending ending">Dark sci-fi</button>
-            <button data-query="romantic comedy in New York with witty dialogue">New York rom-com</button>
-            <button data-query="space adventure with alien civilization">Space adventure</button>
-          </div>
-
-          <button class="primary-button" id="searchButton" type="button">Search</button>
-
-          <div class="crawler-proof">
-            <img src="./assets/keyframes/benchmark-001.jpg" alt="Offline crawler keyframe preview" />
-            <div>
-              <strong>Offline Crawler Proof</strong>
-              <span>Scene text, mood tags, and keyframes from local video ingestion are searchable in this PWA demo.</span>
+        <main class="content">
+          <section class="view active" id="discoverView" data-view="discover">
+            <div class="search-stage">
+              <div class="search-heading">
+                <div><span class="section-kicker">Scene-to-title search</span><h2>Describe what you remember.</h2></div>
+                <button class="icon-button ghost" id="clearButton" type="button" title="Clear search" aria-label="Clear search"><i data-lucide="x"></i></button>
+              </div>
+              <div class="query-composer">
+                <i data-lucide="sparkles"></i>
+                <textarea id="queryInput" rows="3" dir="auto" placeholder="A detective enters a dark room while the city lights flicker outside..."></textarea>
+                <button class="button primary search-button" id="searchButton" type="button"><i data-lucide="search"></i><span>Find scene</span></button>
+              </div>
+              <div class="search-tools">
+                <div class="prompt-list" aria-label="Example searches">
+                  <button type="button" data-query="a lonely detective enters a dark room and investigates a mystery">Detective noir</button>
+                  <button type="button" data-query="a dream collapses while people run through a rotating hallway">Dream collapse</button>
+                  <button type="button" data-query="کارآگاهی تنها وارد اتاقی تاریک می شود و دنبال سرنخ می گردد">جستجوی فارسی</button>
+                  <button type="button" data-query="space adventure with an alien civilization and a distant moon">Space frontier</button>
+                </div>
+                <div class="search-settings">
+                  <label>Results <input id="topKInput" type="number" min="3" max="20" value="8" /></label>
+                  <label>Source
+                    <select id="sourceFilter">
+                      <option value="all">All sources</option>
+                      <option value="offline">Scene index</option>
+                      <option value="movies">Movies</option>
+                      <option value="series">Series</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
             </div>
-          </div>
-        </section>
 
-        <section class="results-panel" aria-label="Results">
-          <div class="panel-heading">
-            <span>Results</span>
-            <span id="resultMeta">Ready</span>
-          </div>
-          <div class="results-list empty-state" id="results">
-            Search by plot, mood, scene, character situation, or cinematic feeling.
-          </div>
-        </section>
-
-        <aside class="side-panel" aria-label="Memory">
-          <nav class="tabs">
-            <button class="active" data-tab="history" type="button">History</button>
-            <button data-tab="favorites" type="button">Favorites</button>
-            <button data-tab="system" type="button">System</button>
-          </nav>
-
-          <div class="tab-view active" id="historyTab">
-            <div class="side-list" id="historyList"></div>
-          </div>
-
-          <div class="tab-view" id="favoritesTab">
-            <div class="side-list" id="favoriteList"></div>
-          </div>
-
-          <div class="tab-view" id="systemTab">
-            <div class="system-card">
-              <strong>GitHub Pages Build</strong>
-              <span>Static PWA for public showcase</span>
-              <span>Backend FAISS pipeline remains available locally through FastAPI.</span>
+            <div class="stat-strip" aria-label="Catalog summary">
+              <div><i data-lucide="clapperboard"></i><span><strong id="metricIndexed">-</strong><small>showcase titles</small></span></div>
+              <div><i data-lucide="library"></i><span><strong id="metricOffline">-</strong><small>series titles</small></span></div>
+              <div><i data-lucide="binary"></i><span><strong id="metricScenes">-</strong><small>scene records</small></span></div>
+              <div><i data-lucide="timer"></i><span><strong id="metricLatency">-</strong><small>last search</small></span></div>
             </div>
-            <div class="system-card">
-              <strong>Offline Capability</strong>
-              <span>App shell and sample catalog are cached after first load.</span>
+
+            <section class="results-section">
+              <div class="section-header">
+                <div><span class="section-kicker">Ranked matches</span><h3>Results</h3></div>
+                <span class="count-label" id="resultMeta">Ready</span>
+              </div>
+              <div id="results" class="results-grid empty-results">
+                <div class="empty-visual"><i data-lucide="scan-search"></i></div>
+                <strong>Search by dialogue, action, mood, or a visual memory.</strong>
+                <span>Processed media includes scene frames, timestamps, subtitles, and visual descriptions.</span>
+              </div>
+            </section>
+          </section>
+
+          <section class="view" id="scenesView" data-view="scenes">
+            <div class="page-heading">
+              <div><span class="section-kicker">Offline intelligence</span><h2>Scene Lab</h2></div>
+              <div class="health-badge showcase"><span></span>Public showcase mode</div>
             </div>
-          </div>
-        </aside>
-      </main>
+
+            <div class="lab-layout">
+              <section class="tool-panel upload-panel">
+                <div class="panel-heading"><span>01</span><div><h3>Media source</h3><small>Video and subtitle tracks</small></div></div>
+                <div class="drop-zone" id="videoDropZone" tabindex="0" role="button">
+                  <input id="videoInput" type="file" accept="video/mp4,video/x-matroska,video/webm,video/quicktime,video/*" hidden />
+                  <div class="drop-icon"><i data-lucide="file-video-2"></i></div>
+                  <strong id="videoDropTitle">Drop a video here</strong>
+                  <span id="videoDropMeta">MP4, MKV, MOV, AVI, WEBM</span>
+                  <button class="button secondary compact" type="button" id="chooseVideoButton"><i data-lucide="folder-open"></i>Browse</button>
+                </div>
+                <div class="file-row" id="selectedVideo" hidden>
+                  <i data-lucide="film"></i><div><strong></strong><span></span></div>
+                  <button class="icon-button ghost" id="removeVideoButton" type="button" aria-label="Remove video"><i data-lucide="trash-2"></i></button>
+                </div>
+                <label class="field-label">Subtitle tracks
+                  <input id="subtitleInput" type="file" accept=".srt,.vtt" multiple />
+                </label>
+                <button class="button primary full-width" id="previewVideoButton" type="button" disabled><i data-lucide="play"></i><span>Preview selected media</span></button>
+                <div class="notice">
+                  The public PWA can preview a local file without uploading it. Full scene detection, speech transcription, BLIP captioning, and FAISS indexing run in the repository's FastAPI Studio.
+                </div>
+              </section>
+
+              <section class="tool-panel pipeline-panel">
+                <div class="panel-heading"><span>02</span><div><h3>Intelligence pipeline</h3><small>Implemented in the local runtime</small></div></div>
+                <ol class="pipeline-steps">
+                  <li class="ready"><span><i data-lucide="scissors"></i></span><div><strong>Adaptive scene boundaries</strong><small>PySceneDetect with OpenCV fallback</small></div></li>
+                  <li class="ready"><span><i data-lucide="captions"></i></span><div><strong>Dialogue recovery</strong><small>SRT, VTT, embedded tracks, or faster-whisper</small></div></li>
+                  <li class="ready"><span><i data-lucide="image"></i></span><div><strong>Visual understanding</strong><small>BLIP keyframe captions and visual tags</small></div></li>
+                  <li class="ready"><span><i data-lucide="binary"></i></span><div><strong>Scene vectors</strong><small>Independent FAISS vector per scene</small></div></li>
+                  <li class="ready"><span><i data-lucide="circle-check"></i></span><div><strong>Search ready</strong><small>Movie title, timestamp, transcript, and frame</small></div></li>
+                </ol>
+              </section>
+            </div>
+
+            <section class="timeline-section">
+              <div class="section-header"><div><span class="section-kicker">Processed examples</span><h3>Scene timeline</h3></div></div>
+              <div id="sceneTimeline" class="media-timeline empty-inline">Loading processed scenes...</div>
+            </section>
+          </section>
+
+          <section class="view" id="libraryView" data-view="library">
+            <div class="page-heading"><div><span class="section-kicker">Browser memory</span><h2>Library</h2></div></div>
+            <div class="library-grid">
+              <section><div class="section-header"><div><span class="section-kicker">Recent</span><h3>Search history</h3></div></div><div class="library-list" id="historyList"></div></section>
+              <section><div class="section-header"><div><span class="section-kicker">Saved</span><h3>Favorites</h3></div></div><div class="library-list" id="favoriteList"></div></section>
+            </div>
+          </section>
+
+          <section class="view" id="systemView" data-view="system">
+            <div class="page-heading"><div><span class="section-kicker">Architecture</span><h2>System</h2></div><span class="status-pill" id="statusPill">Loading catalog</span></div>
+            <div class="system-grid">
+              <div class="system-card"><span>Public mode</span><strong>Installable PWA</strong><small>Static catalog search and offline app shell</small></div>
+              <div class="system-card"><span>Production retrieval</span><strong>Dual FAISS</strong><small>Movie-level and scene-level vector indexes</small></div>
+              <div class="system-card"><span>Scene detector</span><strong>AdaptiveDetector</strong><small>Content-aware cuts with bounded scene durations</small></div>
+              <div class="system-card"><span>Media intelligence</span><strong>Subtitle + Vision</strong><small>FFmpeg, faster-whisper, and BLIP</small></div>
+            </div>
+            <section class="diagnostic-panel">
+              <div class="section-header"><div><span class="section-kicker">Deployment note</span><h3>Runtime boundary</h3></div></div>
+              <p>GitHub Pages hosts this installable showcase. The full upload and GPU pipeline is available from the same interface when the FastAPI backend is running locally or on a Python server.</p>
+            </section>
+          </section>
+        </main>
+      </div>
     </div>
 
-    <script src="./assets/app.js?v=20260714-scene-v3" type="module"></script>
+    <dialog id="playerDialog" class="player-dialog">
+      <div class="player-topbar"><div><strong id="playerTitle">Local media preview</strong><span id="playerTimecode">Browser-only playback</span></div><button class="icon-button ghost" id="closePlayerButton" type="button" aria-label="Close player"><i data-lucide="x"></i></button></div>
+      <video id="scenePlayer" controls preload="metadata"></video>
+      <div class="player-caption" id="playerCaption">The selected file remains on this device.</div>
+    </dialog>
+
+    <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+    <script src="./assets/lucide.min.js?v=0.468.0"></script>
+  <script src="./assets/app.js?v=20260714-studio-v7"></script>
   </body>
 </html>

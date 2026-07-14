@@ -1,14 +1,15 @@
-const CACHE_NAME = "cinescene-pwa-v20260714-scene-v3";
+const CACHE_NAME = "cinescene-pwa-v20260714-studio-v7";
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
-  "./assets/styles.css?v=20260714-scene-v3",
-  "./assets/app.js?v=20260714-scene-v3",
+  "./assets/styles.css?v=20260714-studio-v7",
+  "./assets/app.js?v=20260714-studio-v7",
   "./assets/icon.svg",
-  "./assets/keyframes/074564b877b4_001.jpg",
-  "./assets/keyframes/074564b877b4_002.jpg",
-  "./assets/keyframes/074564b877b4_003.jpg",
+  "./assets/lucide.min.js?v=0.468.0",
+  "./assets/manrope-latin.woff2",
+  "./assets/vazirmatn-arabic.woff2",
+  "./assets/vazirmatn-latin.woff2",
   "./data/catalog.sample.json"
 ];
 
@@ -34,6 +35,7 @@ self.addEventListener("fetch", (event) => {
       if (cached) return cached;
       return fetch(event.request)
         .then((response) => {
+          if (!response.ok) return response;
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
           return response;
